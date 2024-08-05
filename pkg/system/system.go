@@ -10,6 +10,7 @@ import (
 func InitDB(operationManager memoryManagers.OperationManager) {
 	_buildDB(operationManager)
 	_buildSysLogs(operationManager)
+	_buildSysUsers(operationManager)
 }
 
 func _buildDB(operationManager memoryManagers.OperationManager) {
@@ -29,6 +30,19 @@ func _buildSysLogs(operationManager memoryManagers.OperationManager) {
 		"is_current": diskModels.FormatItem{KeyType: memoryConstants.Bool},
 		"version":    diskModels.FormatItem{KeyType: memoryConstants.Int},
 		"query_hex":  diskModels.FormatItem{KeyType: memoryConstants.String},
+	}, nil); err != nil {
+		panic(err)
+	}
+}
+
+func _buildSysUsers(operationManager memoryManagers.OperationManager) {
+	if operationManager.BlobExists(systemConstants.DBSys, systemConstants.BlobSysUser) {
+		return
+	}
+	if err := operationManager.CreateBlob(systemConstants.DBSys, systemConstants.BlobSysUser, diskModels.Format{
+		"user":       diskModels.FormatItem{KeyType: memoryConstants.String},
+		"password":   diskModels.FormatItem{KeyType: memoryConstants.String},
+		"permission": diskModels.FormatItem{KeyType: memoryConstants.String},
 	}, nil); err != nil {
 		panic(err)
 	}

@@ -7,19 +7,14 @@ import (
 	"github.com/stevekineeve88/nimydb-engine/pkg/memory/managers"
 	"github.com/stevekineeve88/nimydb-engine/pkg/memory/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/query/models"
-	"github.com/stevekineeve88/nimydb-engine/pkg/system/models"
+	"github.com/stevekineeve88/nimydb-engine/pkg/system/constants"
 	"sort"
-)
-
-const (
-	dbSys      = "sys"
-	blobSysLog = "sys_log"
 )
 
 type LogManager interface {
 	AddLog(query queryModels.Query) error
-	GetLogs(filterItems []memoryModels.FilterItem) ([]systemModels.Log, error)
-	GetCurrent() systemModels.Log
+	GetLogs(filterItems []memoryModels.FilterItem) ([]queryModels.Log, error)
+	GetCurrent() queryModels.Log
 }
 
 type logManager struct {
@@ -39,7 +34,7 @@ func (lm *logManager) AddLog(query queryModels.Query) error {
 		if err != nil {
 			return err
 		}
-		_, err = lm.operationManager.AddRecords(dbSys, blobSysLog, []diskModels.PageRecord{
+		_, err = lm.operationManager.AddRecords(systemConstants.DBSys, systemConstants.BlobSysLog, []diskModels.PageRecord{
 			{
 				"is_current": true,
 				"version":    1,
@@ -48,7 +43,7 @@ func (lm *logManager) AddLog(query queryModels.Query) error {
 		})
 		return err
 	}
-	err := lm.operationManager.UpdateRecordByIndex(dbSys, blobSysLog, currentLog.Id, diskModels.PageRecord{
+	err := lm.operationManager.UpdateRecordByIndex(systemConstants.DBSys, systemConstants.BlobSysLog, currentLog.Id, diskModels.PageRecord{
 		"is_current": false,
 	})
 	if err != nil {
@@ -58,7 +53,7 @@ func (lm *logManager) AddLog(query queryModels.Query) error {
 	if err != nil {
 		return err
 	}
-	_, err = lm.operationManager.AddRecords(dbSys, blobSysLog, []diskModels.PageRecord{
+	_, err = lm.operationManager.AddRecords(systemConstants.DBSys, systemConstants.BlobSysLog, []diskModels.PageRecord{
 		{
 			"is_current": true,
 			"version":    currentLog.Version + 1,
@@ -68,10 +63,10 @@ func (lm *logManager) AddLog(query queryModels.Query) error {
 	return err
 }
 
-func (lm *logManager) GetLogs(filterItems []memoryModels.FilterItem) ([]systemModels.Log, error) {
+func (lm *logManager) GetLogs(filterItems []memoryModels.FilterItem) ([]queryModels.Log, error) {
 	records, err := lm.operationManager.GetRecords(
-		dbSys,
-		blobSysLog,
+		systemConstants.DBSys,
+		systemConstants.BlobSysLog,
 		filterItems,
 		memoryModels.SearchPartition{},
 		memoryModels.GetOperationParams{},
@@ -79,10 +74,10 @@ func (lm *logManager) GetLogs(filterItems []memoryModels.FilterItem) ([]systemMo
 	if err != nil {
 		return nil, err
 	}
-	logs := []systemModels.Log{}
+	logs := []queryModels.Log{}
 	for _, record := range records {
 		if query, err := lm.convertToQuery(record["query_hex"].(string)); err == nil {
-			logs = append(logs, systemModels.Log{
+			logs = append(logs, queryModels.Log{
 				Id:      record["_id"].(string),
 				Version: record["version"].(int),
 				Query:   query,
@@ -95,10 +90,10 @@ func (lm *logManager) GetLogs(filterItems []memoryModels.FilterItem) ([]systemMo
 	return logs, nil
 }
 
-func (lm *logManager) GetCurrent() systemModels.Log {
+func (lm *logManager) GetCurrent() queryModels.Log {
 	records, err := lm.operationManager.GetRecords(
-		dbSys,
-		blobSysLog,
+		systemConstants.DBSys,
+		systemConstants.BlobSysLog,
 		[]memoryModels.FilterItem{{
 			Key:   "is_current",
 			Op:    "=",
@@ -110,10 +105,10 @@ func (lm *logManager) GetCurrent() systemModels.Log {
 	if err != nil {
 		panic(err.Error())
 	}
-	logs := []systemModels.Log{}
+	logs := []queryModels.Log{}
 	for _, record := range records {
 		if query, err := lm.convertToQuery(record["query_hex"].(string)); err == nil {
-			logs = append(logs, systemModels.Log{
+			logs = append(logs, queryModels.Log{
 				Id:      record["_id"].(string),
 				Version: record["version"].(int),
 				Query:   query,
@@ -124,7 +119,7 @@ func (lm *logManager) GetCurrent() systemModels.Log {
 		panic("current log is corrupt")
 	}
 	if len(logs) == 0 {
-		return systemModels.Log{}
+		return queryModels.Log{}
 	}
 	return logs[0]
 }

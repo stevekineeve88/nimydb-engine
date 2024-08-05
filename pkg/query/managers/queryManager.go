@@ -61,6 +61,11 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 				ErrorMessage: err.Error(),
 			}
 		}
+		if queryConstants.IsSystemDB(nameSplit.DB) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
+			}
+		}
 		errMessage := ""
 		err = qm.operationManager.CreateBlob(
 			nameSplit.DB,
@@ -79,6 +84,11 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
+			}
+		}
+		if queryConstants.IsSystemDB(nameSplit.DB) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -104,6 +114,11 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.QueryResult {
 	switch query.On {
 	case queryConstants.OnDB:
+		if queryConstants.IsSystemDB(query.Name) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
+			}
+		}
 		errMessage := ""
 		err := qm.operationManager.DeleteDB(query.Name)
 		if err != nil {
@@ -117,6 +132,11 @@ func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
+			}
+		}
+		if queryConstants.IsSystemDB(nameSplit.DB) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -135,6 +155,11 @@ func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
+			}
+		}
+		if queryConstants.IsSystemDB(nameSplit.DB) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -175,6 +200,11 @@ func (qm *queryManager) handleActionUpdate(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
+			}
+		}
+		if queryConstants.IsSystemDB(nameSplit.DB) {
+			return queryModels.QueryResult{
+				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
