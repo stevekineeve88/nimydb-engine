@@ -82,16 +82,16 @@ type Blob struct {
 	partitionMap         *PartitionMap
 	partition            diskModels.Partition
 	format               diskModels.Format
-	indexDiskManager     diskManagers.IndexDiskManager
-	partitionDiskManager diskManagers.PartitionDiskManager
-	blobDiskManager      diskManagers.BlobDiskManager
+	indexDiskManager     diskManagers.IndexManager
+	partitionDiskManager diskManagers.PartitionManager
+	blobDiskManager      diskManagers.BlobManager
 }
 
 func CreateBlob(db string, blob string, dataLocation string, dataCaching bool) (Blob, error) {
-	indexDiskManager := diskManagers.CreateIndexDiskManager(dataLocation)
-	partitionDiskManager := diskManagers.CreatePartitionDiskManager(dataLocation)
-	blobDiskManager := diskManagers.CreateBlobDiskManager(dataLocation)
-	formatDiskManager := diskManagers.CreateFormatDiskManager(dataLocation)
+	indexDiskManager := diskManagers.CreateIndexManager(dataLocation)
+	partitionDiskManager := diskManagers.CreatePartitionManager(dataLocation)
+	blobDiskManager := diskManagers.CreateBlobManager(dataLocation)
+	formatDiskManager := diskManagers.CreateFormatManager(dataLocation)
 
 	pageMap := NewPageMap(db, blob, dataLocation, dataCaching)
 	indexMap := NewIndexMap(db, blob, dataLocation, dataCaching)
@@ -134,11 +134,11 @@ func CreateBlob(db string, blob string, dataLocation string, dataCaching bool) (
 }
 
 func InitializeBlob(db string, blob string, dataLocation string, format diskModels.Format, partition *diskModels.Partition, dataCaching bool) (Blob, error) {
-	indexDiskManager := diskManagers.CreateIndexDiskManager(dataLocation)
-	pageDiskManager := diskManagers.CreatePageDiskManager(dataLocation)
-	partitionDiskManager := diskManagers.CreatePartitionDiskManager(dataLocation)
-	blobDiskManager := diskManagers.CreateBlobDiskManager(dataLocation)
-	formatDiskManager := diskManagers.CreateFormatDiskManager(dataLocation)
+	indexDiskManager := diskManagers.CreateIndexManager(dataLocation)
+	pageDiskManager := diskManagers.CreatePageManager(dataLocation)
+	partitionDiskManager := diskManagers.CreatePartitionManager(dataLocation)
+	blobDiskManager := diskManagers.CreateBlobManager(dataLocation)
+	formatDiskManager := diskManagers.CreateFormatManager(dataLocation)
 
 	var formatter BlobFormatter
 	if partition != nil {

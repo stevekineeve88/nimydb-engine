@@ -14,7 +14,7 @@ const (
 	pagesDirectory = "pages"
 )
 
-type PageDiskManager interface {
+type PageManager interface {
 	Initialize(db string, blob string) error
 	Create(db string, blob string) (string, error)
 	GetAll(db string, blob string) (diskModels.Pages, error)
@@ -23,20 +23,20 @@ type PageDiskManager interface {
 	Delete(db string, blob string, pageFileName string) (bool, error)
 }
 
-type pageDiskManager struct {
+type pageManager struct {
 	dataLocation string
 }
 
-var pageDiskManagerInstance *pageDiskManager
+var pageManagerInstance *pageManager
 
-func CreatePageDiskManager(dataLocation string) PageDiskManager {
+func CreatePageManager(dataLocation string) PageManager {
 	sync.OnceFunc(func() {
-		pageDiskManagerInstance = &pageDiskManager{dataLocation: dataLocation}
+		pageManagerInstance = &pageManager{dataLocation: dataLocation}
 	})()
-	return pageDiskManagerInstance
+	return pageManagerInstance
 }
 
-func (pdm *pageDiskManager) Initialize(db string, blob string) error {
+func (pdm *pageManager) Initialize(db string, blob string) error {
 	pagesFilePath := pdm.getPagesFileName(db, blob)
 	if err := diskUtils.CreateFile(pagesFilePath); err != nil {
 		return err
@@ -51,7 +51,7 @@ func (pdm *pageDiskManager) Initialize(db string, blob string) error {
 	return diskUtils.CreateDir(pdm.getPagesDirectoryName(db, blob))
 }
 
-func (pdm *pageDiskManager) Create(db string, blob string) (string, error) {
+func (pdm *pageManager) Create(db string, blob string) (string, error) {
 	newPageFile := fmt.Sprintf("%s.json", uuid.New().String())
 	newPageFilePath := fmt.Sprintf("%s/%s", pdm.getPagesDirectoryName(db, blob), newPageFile)
 	if err := diskUtils.CreateFile(newPageFilePath); err != nil {
@@ -73,7 +73,7 @@ func (pdm *pageDiskManager) Create(db string, blob string) (string, error) {
 	return newPageFile, err
 }
 
-func (pdm *pageDiskManager) GetAll(db string, blob string) (diskModels.Pages, error) {
+func (pdm *pageManager) GetAll(db string, blob string) (diskModels.Pages, error) {
 	var pages diskModels.Pages
 	pagesFilePath := pdm.getPagesFileName(db, blob)
 	file, err := diskUtils.GetFile(pagesFilePath)
@@ -85,7 +85,7 @@ func (pdm *pageDiskManager) GetAll(db string, blob string) (diskModels.Pages, er
 	return pages, err
 }
 
-func (pdm *pageDiskManager) GetData(db string, blob string, pageFileName string) (diskModels.PageRecords, error) {
+func (pdm *pageManager) GetData(db string, blob string, pageFileName string) (diskModels.PageRecords, error) {
 	var pageRecords diskModels.PageRecords
 	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s", pdm.getPagesDirectoryName(db, blob), pageFileName))
 	if err != nil {
@@ -95,7 +95,7 @@ func (pdm *pageDiskManager) GetData(db string, blob string, pageFileName string)
 	return pageRecords, err
 }
 
-func (pdm *pageDiskManager) WriteData(db string, blob string, pageFileName string, data diskModels.PageRecords) error {
+func (pdm *pageManager) WriteData(db string, blob string, pageFileName string, data diskModels.PageRecords) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -103,7 +103,7 @@ func (pdm *pageDiskManager) WriteData(db string, blob string, pageFileName strin
 	return diskUtils.WriteFile(fmt.Sprintf("%s/%s", pdm.getPagesDirectoryName(db, blob), pageFileName), dataBytes)
 }
 
-func (pdm *pageDiskManager) Delete(db string, blob string, pageFileName string) (bool, error) {
+func (pdm *pageManager) Delete(db string, blob string, pageFileName string) (bool, error) {
 	pages, err := pdm.GetAll(db, blob)
 	if err != nil {
 		return false, err
@@ -125,10 +125,10 @@ func (pdm *pageDiskManager) Delete(db string, blob string, pageFileName string) 
 	return err != nil, err
 }
 
-func (pdm *pageDiskManager) getPagesFileName(db string, blob string) string {
+func (pdm *pageManager) getPagesFileName(db string, blob string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, pagesFile)
 }
 
-func (pdm *pageDiskManager) getPagesDirectoryName(db string, blob string) string {
+func (pdm *pageManager) getPagesDirectoryName(db string, blob string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", pdm.dataLocation, db, blob, pagesDirectory)
 }

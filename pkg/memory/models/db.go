@@ -11,7 +11,7 @@ type DBMap struct {
 	itemMap       map[string]*BlobMap
 	dataLocation  string
 	dataCaching   bool
-	dbDiskManager diskManagers.DBDiskManager
+	dbDiskManager diskManagers.DBManager
 }
 
 func NewDBMap(dataLocation string, dataCaching bool) DBMap {
@@ -20,7 +20,7 @@ func NewDBMap(dataLocation string, dataCaching bool) DBMap {
 		itemMap:       make(map[string]*BlobMap),
 		dataLocation:  dataLocation,
 		dataCaching:   dataCaching,
-		dbDiskManager: diskManagers.CreateDBDiskManager(dataLocation),
+		dbDiskManager: diskManagers.CreateDBManager(dataLocation),
 	}
 }
 

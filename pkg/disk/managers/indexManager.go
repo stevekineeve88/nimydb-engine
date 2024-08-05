@@ -15,7 +15,7 @@ const (
 	indexPrefixLength = 1
 )
 
-type IndexDiskManager interface {
+type IndexManager interface {
 	Initialize(db string, blob string) error
 	Create(db string, blob string, pageRecordId string) (string, error)
 	GetAll(db string, blob string) (diskModels.Indexes, error)
@@ -25,20 +25,20 @@ type IndexDiskManager interface {
 	GetPageRecordIdPrefix(pageRecordId string) string
 }
 
-type indexDiskManager struct {
+type indexManager struct {
 	dataLocation string
 }
 
-var indexDiskManagerInstance *indexDiskManager
+var indexManagerInstance *indexManager
 
-func CreateIndexDiskManager(dataLocation string) IndexDiskManager {
+func CreateIndexManager(dataLocation string) IndexManager {
 	sync.OnceFunc(func() {
-		indexDiskManagerInstance = &indexDiskManager{dataLocation: dataLocation}
+		indexManagerInstance = &indexManager{dataLocation: dataLocation}
 	})()
-	return indexDiskManagerInstance
+	return indexManagerInstance
 }
 
-func (idm *indexDiskManager) Initialize(db string, blob string) error {
+func (idm *indexManager) Initialize(db string, blob string) error {
 	indexesFilePath := idm.getIndexesFileName(db, blob)
 	if err := diskUtils.CreateFile(indexesFilePath); err != nil {
 		return err
@@ -53,7 +53,7 @@ func (idm *indexDiskManager) Initialize(db string, blob string) error {
 	return diskUtils.CreateDir(idm.getIndexesDirectoryName(db, blob))
 }
 
-func (idm *indexDiskManager) Create(db string, blob string, pageRecordId string) (string, error) {
+func (idm *indexManager) Create(db string, blob string, pageRecordId string) (string, error) {
 	newIndexFile := fmt.Sprintf("%s.json", uuid.New().String())
 	newIndexFilePath := fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), newIndexFile)
 	if err := diskUtils.CreateFile(newIndexFilePath); err != nil {
@@ -82,7 +82,7 @@ func (idm *indexDiskManager) Create(db string, blob string, pageRecordId string)
 	return newIndexFile, err
 }
 
-func (idm *indexDiskManager) GetAll(db string, blob string) (diskModels.Indexes, error) {
+func (idm *indexManager) GetAll(db string, blob string) (diskModels.Indexes, error) {
 	var indexes diskModels.Indexes
 	indexesFilePath := idm.getIndexesFileName(db, blob)
 	file, err := diskUtils.GetFile(indexesFilePath)
@@ -94,7 +94,7 @@ func (idm *indexDiskManager) GetAll(db string, blob string) (diskModels.Indexes,
 	return indexes, err
 }
 
-func (idm *indexDiskManager) GetData(db string, blob string, indexFileName string) (diskModels.IndexRecords, error) {
+func (idm *indexManager) GetData(db string, blob string, indexFileName string) (diskModels.IndexRecords, error) {
 	var indexRecords diskModels.IndexRecords
 	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName))
 	if err != nil {
@@ -104,7 +104,7 @@ func (idm *indexDiskManager) GetData(db string, blob string, indexFileName strin
 	return indexRecords, err
 }
 
-func (idm *indexDiskManager) WriteData(db string, blob string, indexFileName string, data diskModels.IndexRecords) error {
+func (idm *indexManager) WriteData(db string, blob string, indexFileName string, data diskModels.IndexRecords) error {
 	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -112,7 +112,7 @@ func (idm *indexDiskManager) WriteData(db string, blob string, indexFileName str
 	return diskUtils.WriteFile(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName), dataBytes)
 }
 
-func (idm *indexDiskManager) Delete(db string, blob string, indexFileName string) (bool, error) {
+func (idm *indexManager) Delete(db string, blob string, indexFileName string) (bool, error) {
 	indexes, err := idm.GetAll(db, blob)
 	if err != nil {
 		return false, err
@@ -138,14 +138,14 @@ func (idm *indexDiskManager) Delete(db string, blob string, indexFileName string
 	return err != nil, err
 }
 
-func (idm *indexDiskManager) GetPageRecordIdPrefix(pageRecordId string) string {
+func (idm *indexManager) GetPageRecordIdPrefix(pageRecordId string) string {
 	return pageRecordId[0:indexPrefixLength]
 }
 
-func (idm *indexDiskManager) getIndexesFileName(db string, blob string) string {
+func (idm *indexManager) getIndexesFileName(db string, blob string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", idm.dataLocation, db, blob, indexesFile)
 }
 
-func (idm *indexDiskManager) getIndexesDirectoryName(db string, blob string) string {
+func (idm *indexManager) getIndexesDirectoryName(db string, blob string) string {
 	return fmt.Sprintf("%s/%s/%s/%s", idm.dataLocation, db, blob, indexesDirectory)
 }

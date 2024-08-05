@@ -14,7 +14,7 @@ type IndexMap struct {
 	currentPages     IndexPrefixCurrentPageMap
 	db               string
 	blob             string
-	indexDiskManager diskManagers.IndexDiskManager
+	indexDiskManager diskManagers.IndexManager
 	dataLocation     string
 	dataCaching      bool
 }
@@ -29,7 +29,7 @@ func NewIndexMap(db string, blob string, dataLocation string, dataCaching bool) 
 		currentPages:     IndexPrefixCurrentPageMap{},
 		db:               db,
 		blob:             blob,
-		indexDiskManager: diskManagers.CreateIndexDiskManager(dataLocation),
+		indexDiskManager: diskManagers.CreateIndexManager(dataLocation),
 		dataLocation:     dataLocation,
 		dataCaching:      dataCaching,
 	}
@@ -125,7 +125,7 @@ func (im *IndexMap) GetCurrentIndex(prefix string) (*Index, error) {
 type Index struct {
 	m                *sync.Mutex
 	fileName         string
-	indexDiskManager diskManagers.IndexDiskManager
+	indexDiskManager diskManagers.IndexManager
 	db               string
 	blob             string
 	cache            diskModels.IndexRecords
@@ -136,7 +136,7 @@ func NewIndex(db string, blob string, fileName string, dataLocation string, data
 	return &Index{
 		m:                &sync.Mutex{},
 		fileName:         fileName,
-		indexDiskManager: diskManagers.CreateIndexDiskManager(dataLocation),
+		indexDiskManager: diskManagers.CreateIndexManager(dataLocation),
 		db:               db,
 		blob:             blob,
 		cache:            nil,

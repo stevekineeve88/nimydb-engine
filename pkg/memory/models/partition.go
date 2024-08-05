@@ -13,7 +13,7 @@ type PartitionMap struct {
 	currentPages         PartitionHashCurrentPageMap
 	db                   string
 	blob                 string
-	partitionDiskManager diskManagers.PartitionDiskManager
+	partitionDiskManager diskManagers.PartitionManager
 	dataLocation         string
 }
 
@@ -28,7 +28,7 @@ func NewPartitionMap(db string, blob string, dataLocation string, pageMap *PageM
 		currentPages:         PartitionHashCurrentPageMap{},
 		db:                   db,
 		blob:                 blob,
-		partitionDiskManager: diskManagers.CreatePartitionDiskManager(dataLocation),
+		partitionDiskManager: diskManagers.CreatePartitionManager(dataLocation),
 		dataLocation:         dataLocation,
 	}
 }

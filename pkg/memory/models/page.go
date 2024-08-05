@@ -13,7 +13,7 @@ type PageMap struct {
 	currentPage     *Page
 	db              string
 	blob            string
-	pageDiskManager diskManagers.PageDiskManager
+	pageDiskManager diskManagers.PageManager
 	dataLocation    string
 	dataCaching     bool
 }
@@ -25,7 +25,7 @@ func NewPageMap(db string, blob string, dataLocation string, dataCaching bool) P
 		currentPage:     nil,
 		db:              db,
 		blob:            blob,
-		pageDiskManager: diskManagers.CreatePageDiskManager(dataLocation),
+		pageDiskManager: diskManagers.CreatePageManager(dataLocation),
 		dataLocation:    dataLocation,
 		dataCaching:     dataCaching,
 	}
@@ -106,7 +106,7 @@ func (pm *PageMap) GetCurrentPage() (*Page, error) {
 type Page struct {
 	m               *sync.Mutex
 	fileName        string
-	pageDiskManager diskManagers.PageDiskManager
+	pageDiskManager diskManagers.PageManager
 	db              string
 	blob            string
 	dataCaching     bool
@@ -117,7 +117,7 @@ func NewPage(db string, blob string, fileName string, dataLocation string, dataC
 	return &Page{
 		m:               &sync.Mutex{},
 		fileName:        fileName,
-		pageDiskManager: diskManagers.CreatePageDiskManager(dataLocation),
+		pageDiskManager: diskManagers.CreatePageManager(dataLocation),
 		db:              db,
 		blob:            blob,
 		dataCaching:     dataCaching,

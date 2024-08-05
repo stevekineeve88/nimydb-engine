@@ -12,25 +12,25 @@ const (
 	formatFile = "format.json"
 )
 
-type FormatDiskManager interface {
+type FormatManager interface {
 	Create(db string, blob string, format diskModels.Format) error
 	Get(db string, blob string) (diskModels.Format, error)
 }
 
-type formatDiskManager struct {
+type formatManager struct {
 	dataLocation string
 }
 
-var formatDiskManagerInstance *formatDiskManager
+var formatManagerInstance *formatManager
 
-func CreateFormatDiskManager(dataLocation string) FormatDiskManager {
+func CreateFormatManager(dataLocation string) FormatManager {
 	sync.OnceFunc(func() {
-		formatDiskManagerInstance = &formatDiskManager{dataLocation: dataLocation}
+		formatManagerInstance = &formatManager{dataLocation: dataLocation}
 	})()
-	return formatDiskManagerInstance
+	return formatManagerInstance
 }
 
-func (fdm *formatDiskManager) Create(db string, blob string, format diskModels.Format) error {
+func (fdm *formatManager) Create(db string, blob string, format diskModels.Format) error {
 	formatData, err := json.Marshal(format)
 	if err != nil {
 		return err
@@ -43,7 +43,7 @@ func (fdm *formatDiskManager) Create(db string, blob string, format diskModels.F
 	return diskUtils.WriteFile(filePath, formatData)
 }
 
-func (fdm *formatDiskManager) Get(db string, blob string) (diskModels.Format, error) {
+func (fdm *formatManager) Get(db string, blob string) (diskModels.Format, error) {
 	var format diskModels.Format
 	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s/%s/%s", fdm.dataLocation, db, blob, formatFile))
 	if err != nil {
