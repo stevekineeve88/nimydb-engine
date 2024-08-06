@@ -28,7 +28,7 @@ type With struct {
 type QueryResult struct {
 	Records        []diskModels.PageRecord `json:"records,omitempty"`
 	ConnectionUser systemModels.User       `json:"connectionUser,omitempty"`
-	ErrorMessage   string                  `json:"error_message,omitempty"`
+	ErrorMessage   string                  `json:"errorMessage,omitempty"`
 }
 
 type NameSplit struct {

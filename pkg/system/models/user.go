@@ -11,9 +11,9 @@ type UserConnection struct {
 }
 
 type User struct {
-	Id         string `json:"id"`
-	User       string `json:"user"`
-	Permission string `json:"permission"`
+	Id         string `json:"id,omitempty"`
+	User       string `json:"user,omitempty"`
+	Permission string `json:"permission,omitempty"`
 	Password   string `json:"-"`
 }
 

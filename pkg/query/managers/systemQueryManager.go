@@ -49,6 +49,20 @@ func (sm *systemQueryManager) handleActionGet(query queryModels.Query) queryMode
 			ErrorMessage: errMessage,
 			Records:      records,
 		}
+	case queryConstants.OnUsers:
+		errMessage := ""
+		users, err := sm.userManager.GetUsers(query.With.Filter)
+		if err != nil {
+			errMessage = err.Error()
+		}
+		records := []diskModels.PageRecord{}
+		for _, user := range users {
+			records = append(records, user.ConvertToPageRecord())
+		}
+		return queryModels.QueryResult{
+			ErrorMessage: errMessage,
+			Records:      records,
+		}
 	default:
 		return queryModels.QueryResult{
 			ErrorMessage: fmt.Sprintf("%s not allowed on action %s", query.On, query.Action),

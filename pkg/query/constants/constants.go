@@ -12,6 +12,7 @@ const (
 	OnBlob       = "blob"
 	OnData       = "data"
 	OnLogs       = "logs"
+	OnUsers      = "users"
 	OnConnection = "connection"
 )
 

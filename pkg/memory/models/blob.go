@@ -183,6 +183,11 @@ func InitializeBlob(db string, blob string, dataLocation string, format diskMode
 	indexMap := NewIndexMap(db, blob, dataLocation, dataCaching)
 	partitionMap := NewPartitionMap(db, blob, dataLocation, &pageMap)
 
+	partitionObj := diskModels.Partition{}
+	if partition != nil {
+		partitionObj = *partition
+	}
+
 	return Blob{
 		m:                    &sync.Mutex{},
 		blob:                 blob,
@@ -190,7 +195,7 @@ func InitializeBlob(db string, blob string, dataLocation string, format diskMode
 		pageMap:              &pageMap,
 		indexMap:             &indexMap,
 		partitionMap:         &partitionMap,
-		partition:            diskModels.Partition{},
+		partition:            partitionObj,
 		format:               format,
 		indexDiskManager:     indexDiskManager,
 		partitionDiskManager: partitionDiskManager,
