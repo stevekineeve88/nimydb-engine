@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
-	"sync"
 )
 
 const (
@@ -35,9 +34,9 @@ type partitionManager struct {
 var partitionManagerInstance *partitionManager
 
 func CreatePartitionManager(dataLocation string) PartitionManager {
-	sync.OnceFunc(func() {
+	if partitionManagerInstance == nil {
 		partitionManagerInstance = &partitionManager{dataLocation: dataLocation}
-	})()
+	}
 	return partitionManagerInstance
 }
 

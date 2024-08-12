@@ -10,20 +10,22 @@ import (
 )
 
 type BlobMap struct {
-	m            *sync.Mutex
-	itemMap      map[string]*Blob
-	db           string
-	dataLocation string
-	dataCaching  bool
+	m               *sync.Mutex
+	itemMap         map[string]*Blob
+	db              string
+	dataLocation    string
+	dataCaching     bool
+	blobDiskManager diskManagers.BlobManager
 }
 
 func NewBlobMap(db string, dataLocation string, dataCaching bool) BlobMap {
 	return BlobMap{
-		m:            &sync.Mutex{},
-		itemMap:      make(map[string]*Blob),
-		db:           db,
-		dataLocation: dataLocation,
-		dataCaching:  dataCaching,
+		m:               &sync.Mutex{},
+		itemMap:         make(map[string]*Blob),
+		db:              db,
+		dataLocation:    dataLocation,
+		dataCaching:     dataCaching,
+		blobDiskManager: diskManagers.CreateBlobManager(dataLocation),
 	}
 }
 
@@ -55,13 +57,11 @@ func (bm *BlobMap) Get(blob string) (*Blob, error) {
 func (bm *BlobMap) Delete(blob string) error {
 	bm.m.Lock()
 	defer bm.m.Unlock()
-	if blobObj, ok := bm.itemMap[blob]; ok {
-		err := blobObj.DeleteBlob()
-		if err != nil {
-			return err
-		}
-		delete(bm.itemMap, blob)
+	err := bm.blobDiskManager.Delete(bm.db, blob)
+	if err != nil {
+		return err
 	}
+	delete(bm.itemMap, blob)
 	return nil
 }
 
@@ -69,6 +69,26 @@ func (bm *BlobMap) Remove(blob string) {
 	bm.m.Lock()
 	defer bm.m.Unlock()
 	delete(bm.itemMap, blob)
+}
+
+func (bm *BlobMap) ConvertToPageRecords() []diskModels.PageRecord {
+	blobNames, err := bm.blobDiskManager.GetByDB(bm.db)
+	if err != nil {
+		return nil
+	}
+	pageRecords := []diskModels.PageRecord{}
+	for _, blobName := range blobNames {
+		blob, err := bm.Get(blobName)
+		if err != nil {
+			continue
+		}
+		pageRecords = append(pageRecords, diskModels.PageRecord{
+			"name":      blobName,
+			"format":    blob.format.ConvertToPageRecords(),
+			"partition": blob.partition.ConvertToPageRecords(),
+		})
+	}
+	return pageRecords
 }
 
 type PageRecordsMap map[string]diskModels.PageRecords
@@ -203,10 +223,12 @@ func InitializeBlob(db string, blob string, dataLocation string, format diskMode
 	}, nil
 }
 
-func (b *Blob) DeleteBlob() error {
-	b.m.Lock()
-	defer b.m.Unlock()
-	return b.blobDiskManager.Delete(b.db, b.blob)
+func (b *Blob) GetFormat() diskModels.Format {
+	return b.format
+}
+
+func (b *Blob) GetPartition() diskModels.Partition {
+	return b.partition
 }
 
 func (b *Blob) GetByRecordId(pageRecordId string) (PageRecordsMap, error) {

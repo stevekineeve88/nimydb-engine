@@ -3,7 +3,6 @@ package diskManagers
 import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
-	"sync"
 )
 
 type BlobManager interface {
@@ -19,9 +18,9 @@ type blobManager struct {
 var blobManagerInstance *blobManager
 
 func CreateBlobManager(dataLocation string) BlobManager {
-	sync.OnceFunc(func() {
+	if blobManagerInstance == nil {
 		blobManagerInstance = &blobManager{dataLocation: dataLocation}
-	})()
+	}
 	return blobManagerInstance
 }
 

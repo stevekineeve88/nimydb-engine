@@ -1,21 +1,20 @@
 package queryConstants
 
-import "github.com/stevekineeve88/nimydb-engine/pkg/system/constants"
-
 const (
 	ActionCreate = "create"
 	ActionDelete = "delete"
 	ActionUpdate = "update"
 	ActionGet    = "get"
 
-	OnDB         = "db"
-	OnBlob       = "blob"
-	OnData       = "data"
+	OnDBs = "dbs"
+
+	OnDB    = "db"
+	OnBlobs = "blobs"
+
+	OnBlob = "blob"
+	OnData = "data"
+
 	OnLogs       = "logs"
 	OnUsers      = "users"
 	OnConnection = "connection"
 )
-
-func IsSystemDB(db string) bool {
-	return db == systemConstants.DBSys
-}

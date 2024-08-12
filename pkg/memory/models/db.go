@@ -3,6 +3,7 @@ package memoryModels
 import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/managers"
+	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"sync"
 )
 
@@ -67,4 +68,18 @@ func (dbm *DBMap) Remove(db string) {
 	dbm.m.Lock()
 	defer dbm.m.Unlock()
 	delete(dbm.itemMap, db)
+}
+
+func (dbm *DBMap) ConvertToPageRecords() []diskModels.PageRecord {
+	dbNames, err := dbm.dbDiskManager.GetAll()
+	if err != nil {
+		return nil
+	}
+	pageRecords := []diskModels.PageRecord{}
+	for _, dbName := range dbNames {
+		pageRecords = append(pageRecords, diskModels.PageRecord{
+			"name": dbName,
+		})
+	}
+	return pageRecords
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
-	"sync"
 )
 
 const (
@@ -24,9 +23,9 @@ type formatManager struct {
 var formatManagerInstance *formatManager
 
 func CreateFormatManager(dataLocation string) FormatManager {
-	sync.OnceFunc(func() {
+	if formatManagerInstance == nil {
 		formatManagerInstance = &formatManager{dataLocation: dataLocation}
-	})()
+	}
 	return formatManagerInstance
 }
 

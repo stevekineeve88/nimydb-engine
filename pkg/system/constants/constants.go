@@ -1,5 +1,9 @@
 package systemConstants
 
+import (
+	"strings"
+)
+
 const (
 	DBSys       = "sys"
 	BlobSysLog  = "sys_log"
@@ -16,6 +20,22 @@ var permissionRankMap = map[string]int{
 	PermissionReadWrite: 1,
 	PermissionReadSuper: 2,
 	PermissionSuper:     3,
+}
+
+var sysBlobs = []string{
+	BlobSysLog,
+	BlobSysUser,
+}
+
+func IsSystemName(name string) bool {
+	items := strings.Split(name, ".")
+	if len(items) > 2 {
+		return false
+	}
+	if len(items) == 1 {
+		return items[0] == DBSys
+	}
+	return items[0] == DBSys && _isSystemBlob(items[1])
 }
 
 func HasRead(permission string) bool {
@@ -37,6 +57,15 @@ func HasSuper(permission string) bool {
 func _hasPermission(permission string, comparePerm string) bool {
 	if rank, ok := permissionRankMap[permission]; ok {
 		return rank >= permissionRankMap[comparePerm]
+	}
+	return false
+}
+
+func _isSystemBlob(name string) bool {
+	for _, sysBlob := range sysBlobs {
+		if name == sysBlob {
+			return true
+		}
 	}
 	return false
 }

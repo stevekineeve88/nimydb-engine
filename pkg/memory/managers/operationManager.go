@@ -9,8 +9,10 @@ import (
 type OperationManager interface {
 	CreateDB(db string) error
 	DeleteDB(db string) error
+	GetDBs() []diskModels.PageRecord
 	CreateBlob(db string, blob string, format diskModels.Format, partition *diskModels.Partition) error
 	DeleteBlob(db string, blob string) error
+	GetBlobs(db string) []diskModels.PageRecord
 	GetRecordByIndex(db string, blob string, index string) (diskModels.PageRecord, error)
 	GetRecords(db string, blob string, filterItems []memoryModels.FilterItem, searchPartition memoryModels.SearchPartition, getOperationParams memoryModels.GetOperationParams) ([]diskModels.PageRecord, error)
 	AddRecords(db string, blob string, records []diskModels.PageRecord) ([]diskModels.PageRecord, error)
@@ -41,6 +43,10 @@ func (om *operationManager) DeleteDB(db string) error {
 	return om.dbMap.Delete(db)
 }
 
+func (om *operationManager) GetDBs() []diskModels.PageRecord {
+	return om.dbMap.ConvertToPageRecords()
+}
+
 func (om *operationManager) CreateBlob(db string, blob string, format diskModels.Format, partition *diskModels.Partition) error {
 	blobMap, err := om.dbMap.GetBlobMap(db)
 	if err != nil {
@@ -56,6 +62,14 @@ func (om *operationManager) DeleteBlob(db string, blob string) error {
 		return err
 	}
 	return blobMap.Delete(blob)
+}
+
+func (om *operationManager) GetBlobs(db string) []diskModels.PageRecord {
+	blobMap, err := om.dbMap.GetBlobMap(db)
+	if err != nil {
+		return nil
+	}
+	return blobMap.ConvertToPageRecords()
 }
 
 func (om *operationManager) GetRecordByIndex(db string, blob string, index string) (diskModels.PageRecord, error) {

@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
-	"sync"
 )
 
 const (
@@ -32,9 +31,9 @@ type indexManager struct {
 var indexManagerInstance *indexManager
 
 func CreateIndexManager(dataLocation string) IndexManager {
-	sync.OnceFunc(func() {
+	if indexManagerInstance == nil {
 		indexManagerInstance = &indexManager{dataLocation: dataLocation}
-	})()
+	}
 	return indexManagerInstance
 }
 

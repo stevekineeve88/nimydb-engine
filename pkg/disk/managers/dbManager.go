@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
 	"os"
-	"sync"
 )
 
 type DBManager interface {
@@ -21,9 +20,9 @@ type dbManager struct {
 var dbManagerInstance *dbManager
 
 func CreateDBManager(dataLocation string) DBManager {
-	sync.OnceFunc(func() {
+	if dbManagerInstance == nil {
 		dbManagerInstance = &dbManager{dataLocation: dataLocation}
-	})()
+	}
 	return dbManagerInstance
 }
 

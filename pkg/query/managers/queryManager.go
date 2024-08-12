@@ -7,6 +7,7 @@ import (
 	"github.com/stevekineeve88/nimydb-engine/pkg/memory/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/query/constants"
 	"github.com/stevekineeve88/nimydb-engine/pkg/query/models"
+	"github.com/stevekineeve88/nimydb-engine/pkg/system/managers"
 	"strings"
 )
 
@@ -16,12 +17,21 @@ type QueryManager interface {
 
 type queryManager struct {
 	operationManager memoryManagers.OperationManager
+	userManager      systemManagers.UserManager
+	logManager       systemManagers.LogManager
 }
 
-func CreateQueryManager(operationManager memoryManagers.OperationManager) QueryManager {
-	return &queryManager{
-		operationManager: operationManager,
+var queryManagerInstance *queryManager
+
+func CreateQueryManager(operationManager memoryManagers.OperationManager, userManager systemManagers.UserManager, logManager systemManagers.LogManager) QueryManager {
+	if queryManagerInstance == nil {
+		queryManagerInstance = &queryManager{
+			operationManager: operationManager,
+			userManager:      userManager,
+			logManager:       logManager,
+		}
 	}
+	return queryManagerInstance
 }
 
 func (qm *queryManager) Query(query queryModels.Query) queryModels.QueryResult {
@@ -45,6 +55,19 @@ func (qm *queryManager) Query(query queryModels.Query) queryModels.QueryResult {
 
 func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.QueryResult {
 	switch query.On {
+	case queryConstants.OnConnection:
+		errMessage := ""
+		user, err := qm.userManager.Authenticate(
+			query.With.UserConnection.User,
+			query.With.UserConnection.Password,
+		)
+		if err != nil {
+			errMessage = err.Error()
+		}
+		return queryModels.QueryResult{
+			ErrorMessage:   errMessage,
+			ConnectionUser: user,
+		}
 	case queryConstants.OnDB:
 		errMessage := ""
 		err := qm.operationManager.CreateDB(query.Name)
@@ -59,11 +82,6 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
-			}
-		}
-		if queryConstants.IsSystemDB(nameSplit.DB) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -84,11 +102,6 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
-			}
-		}
-		if queryConstants.IsSystemDB(nameSplit.DB) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -114,11 +127,6 @@ func (qm *queryManager) handleActionCreate(query queryModels.Query) queryModels.
 func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.QueryResult {
 	switch query.On {
 	case queryConstants.OnDB:
-		if queryConstants.IsSystemDB(query.Name) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
-			}
-		}
 		errMessage := ""
 		err := qm.operationManager.DeleteDB(query.Name)
 		if err != nil {
@@ -132,11 +140,6 @@ func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
-			}
-		}
-		if queryConstants.IsSystemDB(nameSplit.DB) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -155,11 +158,6 @@ func (qm *queryManager) handleActionDelete(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
-			}
-		}
-		if queryConstants.IsSystemDB(nameSplit.DB) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -200,11 +198,6 @@ func (qm *queryManager) handleActionUpdate(query queryModels.Query) queryModels.
 		if err != nil {
 			return queryModels.QueryResult{
 				ErrorMessage: err.Error(),
-			}
-		}
-		if queryConstants.IsSystemDB(nameSplit.DB) {
-			return queryModels.QueryResult{
-				ErrorMessage: "cannot use system database",
 			}
 		}
 		errMessage := ""
@@ -272,6 +265,42 @@ func (qm *queryManager) handleActionGet(query queryModels.Query) queryModels.Que
 			if err != nil {
 				errMessage = err.Error()
 			}
+		}
+		return queryModels.QueryResult{
+			ErrorMessage: errMessage,
+			Records:      records,
+		}
+	case queryConstants.OnDBs:
+		return queryModels.QueryResult{
+			Records: qm.operationManager.GetDBs(),
+		}
+	case queryConstants.OnBlobs:
+		return queryModels.QueryResult{
+			Records: qm.operationManager.GetBlobs(query.Name),
+		}
+	case queryConstants.OnLogs:
+		errMessage := ""
+		logs, err := qm.logManager.GetLogs(query.With.Filter)
+		if err != nil {
+			errMessage = err.Error()
+		}
+		records := []diskModels.PageRecord{}
+		for _, log := range logs {
+			records = append(records, log.ConvertToPageRecord())
+		}
+		return queryModels.QueryResult{
+			ErrorMessage: errMessage,
+			Records:      records,
+		}
+	case queryConstants.OnUsers:
+		errMessage := ""
+		users, err := qm.userManager.GetUsers(query.With.Filter)
+		if err != nil {
+			errMessage = err.Error()
+		}
+		records := []diskModels.PageRecord{}
+		for _, user := range users {
+			records = append(records, user.ConvertToPageRecord())
 		}
 		return queryModels.QueryResult{
 			ErrorMessage: errMessage,

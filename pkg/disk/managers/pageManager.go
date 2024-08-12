@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
-	"sync"
 )
 
 const (
@@ -30,9 +29,9 @@ type pageManager struct {
 var pageManagerInstance *pageManager
 
 func CreatePageManager(dataLocation string) PageManager {
-	sync.OnceFunc(func() {
+	if pageManagerInstance == nil {
 		pageManagerInstance = &pageManager{dataLocation: dataLocation}
-	})()
+	}
 	return pageManagerInstance
 }
 
