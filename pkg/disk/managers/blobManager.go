@@ -12,26 +12,34 @@ type BlobManager interface {
 }
 
 type blobManager struct {
-	dataLocation string
+	dataLocation       string
+	createDirFunc      func(directory string) error
+	deleteDirFunc      func(directory string) error
+	getDirContentsFunc func(directory string) ([]string, error)
 }
 
 var blobManagerInstance *blobManager
 
 func CreateBlobManager(dataLocation string) BlobManager {
 	if blobManagerInstance == nil {
-		blobManagerInstance = &blobManager{dataLocation: dataLocation}
+		blobManagerInstance = &blobManager{
+			dataLocation:       dataLocation,
+			createDirFunc:      diskUtils.CreateDir,
+			deleteDirFunc:      diskUtils.DeleteDirectory,
+			getDirContentsFunc: diskUtils.GetDirectoryContents,
+		}
 	}
 	return blobManagerInstance
 }
 
 func (bdm *blobManager) Create(db string, blob string) error {
-	return diskUtils.CreateDir(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob))
+	return bdm.createDirFunc(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob))
 }
 
 func (bdm *blobManager) Delete(db string, blob string) error {
-	return diskUtils.DeleteDirectory(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob))
+	return bdm.deleteDirFunc(fmt.Sprintf("%s/%s/%s", bdm.dataLocation, db, blob))
 }
 
 func (bdm *blobManager) GetByDB(db string) ([]string, error) {
-	return diskUtils.GetDirectoryContents(fmt.Sprintf("%s/%s", bdm.dataLocation, db))
+	return bdm.getDirContentsFunc(fmt.Sprintf("%s/%s", bdm.dataLocation, db))
 }

@@ -14,31 +14,41 @@ type DBManager interface {
 }
 
 type dbManager struct {
-	dataLocation string
+	dataLocation       string
+	createDirFunc      func(directory string) error
+	deleteDirFunc      func(directory string) error
+	getDirContentsFunc func(directory string) ([]string, error)
+	osStatFunc         func(name string) (os.FileInfo, error)
 }
 
 var dbManagerInstance *dbManager
 
 func CreateDBManager(dataLocation string) DBManager {
 	if dbManagerInstance == nil {
-		dbManagerInstance = &dbManager{dataLocation: dataLocation}
+		dbManagerInstance = &dbManager{
+			dataLocation:       dataLocation,
+			createDirFunc:      diskUtils.CreateDir,
+			deleteDirFunc:      diskUtils.DeleteDirectory,
+			getDirContentsFunc: diskUtils.GetDirectoryContents,
+			osStatFunc:         os.Stat,
+		}
 	}
 	return dbManagerInstance
 }
 
 func (ddm *dbManager) Create(db string) error {
-	return diskUtils.CreateDir(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
+	return ddm.createDirFunc(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
 }
 
 func (ddm *dbManager) Delete(db string) error {
-	return diskUtils.DeleteDirectory(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
+	return ddm.deleteDirFunc(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
 }
 
 func (ddm *dbManager) GetAll() ([]string, error) {
-	return diskUtils.GetDirectoryContents(ddm.dataLocation)
+	return ddm.getDirContentsFunc(ddm.dataLocation)
 }
 
 func (ddm *dbManager) Exists(db string) bool {
-	_, err := os.Stat(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
+	_, err := ddm.osStatFunc(fmt.Sprintf("%s/%s", ddm.dataLocation, db))
 	return err == nil
 }

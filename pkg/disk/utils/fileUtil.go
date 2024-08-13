@@ -1,6 +1,7 @@
 package diskUtils
 
 import (
+	"github.com/google/uuid"
 	"os"
 )
 
@@ -43,4 +44,8 @@ func GetFile(filePath string) ([]byte, error) {
 
 func DeleteFile(filePath string) error {
 	return os.Remove(filePath)
+}
+
+func GetUUID() string {
+	return uuid.New().String()
 }

@@ -3,7 +3,6 @@ package diskManagers
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
 )
@@ -25,42 +24,56 @@ type IndexManager interface {
 }
 
 type indexManager struct {
-	dataLocation string
+	dataLocation   string
+	createFileFunc func(filePath string) error
+	createDirFunc  func(directory string) error
+	writeFileFunc  func(filePath string, fileData []byte) error
+	getFileFunc    func(filePath string) ([]byte, error)
+	deleteFileFunc func(filePath string) error
+	uuidFunc       func() string
 }
 
 var indexManagerInstance *indexManager
 
 func CreateIndexManager(dataLocation string) IndexManager {
 	if indexManagerInstance == nil {
-		indexManagerInstance = &indexManager{dataLocation: dataLocation}
+		indexManagerInstance = &indexManager{
+			dataLocation:   dataLocation,
+			createFileFunc: diskUtils.CreateFile,
+			createDirFunc:  diskUtils.CreateDir,
+			writeFileFunc:  diskUtils.WriteFile,
+			getFileFunc:    diskUtils.GetFile,
+			deleteFileFunc: diskUtils.DeleteFile,
+			uuidFunc:       diskUtils.GetUUID,
+		}
 	}
 	return indexManagerInstance
 }
 
 func (idm *indexManager) Initialize(db string, blob string) error {
 	indexesFilePath := idm.getIndexesFileName(db, blob)
-	if err := diskUtils.CreateFile(indexesFilePath); err != nil {
+	if err := idm.createFileFunc(indexesFilePath); err != nil {
 		return err
 	}
 
 	indexes := diskModels.Indexes{}
 	indexesData, _ := json.Marshal(indexes)
-	if err := diskUtils.WriteFile(indexesFilePath, indexesData); err != nil {
-		return nil
+	if err := idm.writeFileFunc(indexesFilePath, indexesData); err != nil {
+		return err
 	}
 
-	return diskUtils.CreateDir(idm.getIndexesDirectoryName(db, blob))
+	return idm.createDirFunc(idm.getIndexesDirectoryName(db, blob))
 }
 
 func (idm *indexManager) Create(db string, blob string, pageRecordId string) (string, error) {
-	newIndexFile := fmt.Sprintf("%s.json", uuid.New().String())
+	newIndexFile := fmt.Sprintf("%s.json", idm.uuidFunc())
 	newIndexFilePath := fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), newIndexFile)
-	if err := diskUtils.CreateFile(newIndexFilePath); err != nil {
+	if err := idm.createFileFunc(newIndexFilePath); err != nil {
 		return "", err
 	}
 	indexRecords := diskModels.IndexRecords{}
 	pageRecordsData, _ := json.Marshal(indexRecords)
-	if err := diskUtils.WriteFile(newIndexFilePath, pageRecordsData); err != nil {
+	if err := idm.writeFileFunc(newIndexFilePath, pageRecordsData); err != nil {
 		return newIndexFile, err
 	}
 
@@ -77,14 +90,14 @@ func (idm *indexManager) Create(db string, blob string, pageRecordId string) (st
 		indexes[indexPrefix] = indexItem
 	}
 	indexesData, _ := json.Marshal(indexes)
-	err = diskUtils.WriteFile(idm.getIndexesFileName(db, blob), indexesData)
+	err = idm.writeFileFunc(idm.getIndexesFileName(db, blob), indexesData)
 	return newIndexFile, err
 }
 
 func (idm *indexManager) GetAll(db string, blob string) (diskModels.Indexes, error) {
 	var indexes diskModels.Indexes
 	indexesFilePath := idm.getIndexesFileName(db, blob)
-	file, err := diskUtils.GetFile(indexesFilePath)
+	file, err := idm.getFileFunc(indexesFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +108,7 @@ func (idm *indexManager) GetAll(db string, blob string) (diskModels.Indexes, err
 
 func (idm *indexManager) GetData(db string, blob string, indexFileName string) (diskModels.IndexRecords, error) {
 	var indexRecords diskModels.IndexRecords
-	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName))
+	file, err := idm.getFileFunc(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +121,7 @@ func (idm *indexManager) WriteData(db string, blob string, indexFileName string,
 	if err != nil {
 		return err
 	}
-	return diskUtils.WriteFile(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName), dataBytes)
+	return idm.writeFileFunc(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName), dataBytes)
 }
 
 func (idm *indexManager) Delete(db string, blob string, indexFileName string) (bool, error) {
@@ -125,7 +138,7 @@ func (idm *indexManager) Delete(db string, blob string, indexFileName string) (b
 				filesNames = filesNames[:len(filesNames)-1]
 				indexes[prefix] = diskModels.IndexItem{FileNames: filesNames}
 				indexesData, _ := json.Marshal(indexes)
-				err = diskUtils.WriteFile(idm.getIndexesFileName(db, blob), indexesData)
+				err = idm.writeFileFunc(idm.getIndexesFileName(db, blob), indexesData)
 				if err != nil {
 					return false, err
 				}
@@ -133,7 +146,7 @@ func (idm *indexManager) Delete(db string, blob string, indexFileName string) (b
 			}
 		}
 	}
-	err = diskUtils.DeleteFile(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName))
+	err = idm.deleteFileFunc(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName))
 	return err != nil, err
 }
 

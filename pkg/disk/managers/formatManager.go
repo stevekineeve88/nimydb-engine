@@ -17,34 +17,39 @@ type FormatManager interface {
 }
 
 type formatManager struct {
-	dataLocation string
+	dataLocation   string
+	createFileFunc func(filePath string) error
+	writeFileFunc  func(filePath string, fileData []byte) error
+	getFileFunc    func(filePath string) ([]byte, error)
 }
 
 var formatManagerInstance *formatManager
 
 func CreateFormatManager(dataLocation string) FormatManager {
 	if formatManagerInstance == nil {
-		formatManagerInstance = &formatManager{dataLocation: dataLocation}
+		formatManagerInstance = &formatManager{
+			dataLocation:   dataLocation,
+			createFileFunc: diskUtils.CreateFile,
+			writeFileFunc:  diskUtils.WriteFile,
+			getFileFunc:    diskUtils.GetFile,
+		}
 	}
 	return formatManagerInstance
 }
 
 func (fdm *formatManager) Create(db string, blob string, format diskModels.Format) error {
-	formatData, err := json.Marshal(format)
-	if err != nil {
-		return err
-	}
+	formatData, _ := json.Marshal(format)
 	filePath := fmt.Sprintf("%s/%s/%s/%s", fdm.dataLocation, db, blob, formatFile)
-	err = diskUtils.CreateFile(filePath)
+	err := fdm.createFileFunc(filePath)
 	if err != nil {
 		return err
 	}
-	return diskUtils.WriteFile(filePath, formatData)
+	return fdm.writeFileFunc(filePath, formatData)
 }
 
 func (fdm *formatManager) Get(db string, blob string) (diskModels.Format, error) {
 	var format diskModels.Format
-	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s/%s/%s", fdm.dataLocation, db, blob, formatFile))
+	file, err := fdm.getFileFunc(fmt.Sprintf("%s/%s/%s/%s", fdm.dataLocation, db, blob, formatFile))
 	if err != nil {
 		return format, err
 	}
