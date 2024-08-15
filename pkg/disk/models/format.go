@@ -10,8 +10,8 @@ func (f Format) ConvertToPageRecords() []PageRecord {
 	pageRecords := []PageRecord{}
 	for key, data := range f {
 		pageRecords = append(pageRecords, PageRecord{
-			"key":     key,
-			"keyType": data.KeyType,
+			"key":      key,
+			"key_type": data.KeyType,
 		})
 	}
 	return pageRecords

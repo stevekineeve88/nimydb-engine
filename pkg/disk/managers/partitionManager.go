@@ -25,44 +25,56 @@ type PartitionManager interface {
 	Remove(db string, blob string, hashKeyFileName string, pageFileName string) error
 	Delete(db string, blob string, hashKeyFileName string) error
 	GetHashKey(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error)
+	CreateHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
 }
 
 type partitionManager struct {
-	dataLocation string
+	dataLocation       string
+	createFileFunc     func(filePath string) error
+	createDirFunc      func(directory string) error
+	writeFileFunc      func(filePath string, fileData []byte) error
+	getFileFunc        func(filePath string) ([]byte, error)
+	getDirContentsFunc func(directory string) ([]string, error)
+	deleteFileFunc     func(filePath string) error
 }
 
 var partitionManagerInstance *partitionManager
 
 func CreatePartitionManager(dataLocation string) PartitionManager {
 	if partitionManagerInstance == nil {
-		partitionManagerInstance = &partitionManager{dataLocation: dataLocation}
+		partitionManagerInstance = &partitionManager{
+			dataLocation:       dataLocation,
+			createFileFunc:     diskUtils.CreateFile,
+			createDirFunc:      diskUtils.CreateDir,
+			writeFileFunc:      diskUtils.WriteFile,
+			getFileFunc:        diskUtils.GetFile,
+			getDirContentsFunc: diskUtils.GetDirectoryContents,
+			deleteFileFunc:     diskUtils.DeleteFile,
+		}
 	}
 	return partitionManagerInstance
 }
 
 func (pdm *partitionManager) Initialize(db string, blob string, partition diskModels.Partition) error {
 	partitionFilePath := pdm.getPartitionsFileName(db, blob)
-	err := diskUtils.CreateFile(partitionFilePath)
+	err := pdm.createFileFunc(partitionFilePath)
 	if err != nil {
 		return err
 	}
 
-	partitionData, err := json.Marshal(partition)
-	if err != nil {
-		return err
-	}
-	err = diskUtils.WriteFile(partitionFilePath, partitionData)
+	partitionData, _ := json.Marshal(partition)
+	err = pdm.writeFileFunc(partitionFilePath, partitionData)
 	if err != nil {
 		return err
 	}
 
-	return diskUtils.CreateDir(pdm.getPartitionsDirectoryName(db, blob))
+	return pdm.createDirFunc(pdm.getPartitionsDirectoryName(db, blob))
 }
 
 func (pdm *partitionManager) AddPage(db string, blob string, hashKeyFileName string, pageFileName string) error {
 	partitionPages, err := pdm.GetByHashKey(db, blob, hashKeyFileName)
 	if err != nil {
-		partitionPages, err = pdm.createHashKey(db, blob, hashKeyFileName)
+		partitionPages, err = pdm.CreateHashKey(db, blob, hashKeyFileName)
 		if err != nil {
 			return err
 		}
@@ -74,27 +86,24 @@ func (pdm *partitionManager) AddPage(db string, blob string, hashKeyFileName str
 	}
 
 	partitionPages = append(partitionPages, diskModels.PartitionPageItem{FileName: pageFileName})
-	partitionPagesData, err := json.Marshal(partitionPages)
-	if err != nil {
-		return err
-	}
+	partitionPagesData, _ := json.Marshal(partitionPages)
 
-	return diskUtils.WriteFile(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName), partitionPagesData)
+	return pdm.writeFileFunc(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName), partitionPagesData)
 }
 
 func (pdm *partitionManager) GetPartition(db string, blob string) (diskModels.Partition, error) {
-	file, err := diskUtils.GetFile(pdm.getPartitionsFileName(db, blob))
+	var partition diskModels.Partition
+	file, err := pdm.getFileFunc(pdm.getPartitionsFileName(db, blob))
 	if err != nil {
-		return diskModels.Partition{}, err
+		return partition, err
 	}
 
-	var partition diskModels.Partition
 	err = json.Unmarshal(file, &partition)
 	return partition, err
 }
 
 func (pdm *partitionManager) GetByHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error) {
-	file, err := diskUtils.GetFile(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName))
+	file, err := pdm.getFileFunc(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName))
 	if err != nil {
 		return nil, err
 	}
@@ -105,23 +114,7 @@ func (pdm *partitionManager) GetByHashKey(db string, blob string, hashKeyFileNam
 }
 
 func (pdm *partitionManager) GetAll(db string, blob string) ([]string, error) {
-	return diskUtils.GetDirectoryContents(pdm.getPartitionsDirectoryName(db, blob))
-}
-
-func (pdm *partitionManager) createHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error) {
-	hashKeyFilePath := fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName)
-	err := diskUtils.CreateFile(hashKeyFilePath)
-	if err != nil {
-		return nil, err
-	}
-
-	partitionPages := diskModels.PartitionPages{}
-	partitionPagesData, err := json.Marshal(partitionPages)
-	if err != nil {
-		return nil, err
-	}
-
-	return partitionPages, diskUtils.WriteFile(hashKeyFilePath, partitionPagesData)
+	return pdm.getDirContentsFunc(pdm.getPartitionsDirectoryName(db, blob))
 }
 
 func (pdm *partitionManager) Remove(db string, blob string, hashKeyFileName string, pageFileName string) error {
@@ -136,14 +129,14 @@ func (pdm *partitionManager) Remove(db string, blob string, hashKeyFileName stri
 			partitionPages[len(partitionPages)-1] = diskModels.PartitionPageItem{}
 			partitionPages = partitionPages[:len(partitionPages)-1]
 			partitionPagesData, _ := json.Marshal(partitionPages)
-			return diskUtils.WriteFile(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName), partitionPagesData)
+			return pdm.writeFileFunc(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName), partitionPagesData)
 		}
 	}
 	return nil
 }
 
 func (pdm *partitionManager) Delete(db string, blob string, hashKeyFileName string) error {
-	return diskUtils.DeleteFile(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName))
+	return pdm.deleteFileFunc(fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName))
 }
 
 func (pdm *partitionManager) GetHashKey(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error) {
@@ -166,6 +159,19 @@ func (pdm *partitionManager) GetHashKeyItem(partitionKey string, pageRecord disk
 	hash := sha1.New()
 	hash.Write([]byte(fmt.Sprintf("%+v", pageRecordItem)))
 	return base64.URLEncoding.EncodeToString(hash.Sum(nil)), nil
+}
+
+func (pdm *partitionManager) CreateHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error) {
+	hashKeyFilePath := fmt.Sprintf("%s/%s", pdm.getPartitionsDirectoryName(db, blob), hashKeyFileName)
+	err := pdm.createFileFunc(hashKeyFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	partitionPages := diskModels.PartitionPages{}
+	partitionPagesData, _ := json.Marshal(partitionPages)
+
+	return partitionPages, pdm.writeFileFunc(hashKeyFilePath, partitionPagesData)
 }
 
 func (pdm *partitionManager) getPartitionsFileName(db string, blob string) string {

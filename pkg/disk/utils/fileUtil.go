@@ -30,7 +30,11 @@ func CreateFile(filePath string) error {
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
+	defer func() {
+		if file != nil {
+			_ = file.Close()
+		}
+	}()
 	return nil
 }
 

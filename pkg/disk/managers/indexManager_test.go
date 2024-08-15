@@ -452,3 +452,246 @@ func TestUnit_GetAll_FailsOnInvalidIndexesData(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.Nil(t, result)
 }
+
+func TestUnit_GetData_GetsIndexRecords(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexRecords := diskModels.IndexRecords{
+		"index_1": "page_1",
+		"index_2": "page_1",
+	}
+	indexFile := "index.json"
+	getFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		getFileCalled = true
+		assert.Equal(t, fmt.Sprintf("%s/%s/%s/%s/%s", dataLocation, db, blob, indexesDirectory, indexFile), filePath)
+		indexRecordsBytes, _ := json.Marshal(indexRecords)
+		return indexRecordsBytes, nil
+	}
+
+	result, err := im.GetData(db, blob, indexFile)
+
+	assert.True(t, getFileCalled)
+	assert.Nil(t, err)
+	assert.Equal(t, indexRecords, result)
+}
+
+func TestUnit_GetData_FailsOnGetIndexFileError(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	getFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		getFileCalled = true
+		return nil, assert.AnError
+	}
+
+	result, err := im.GetData(db, blob, indexFile)
+
+	assert.True(t, getFileCalled)
+	assert.NotNil(t, err)
+	assert.Nil(t, result)
+}
+
+func TestUnit_GetData_FailsOnInvalidIndexRecords(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	getFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		getFileCalled = true
+		return []byte("invalid data"), nil
+	}
+
+	result, err := im.GetData(db, blob, indexFile)
+
+	assert.True(t, getFileCalled)
+	assert.NotNil(t, err)
+	assert.Nil(t, result)
+}
+
+func TestUnit_WriteData_WritesIndexRecords(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexRecords := diskModels.IndexRecords{
+		"index_1": "page_1",
+		"index_2": "page_1",
+	}
+	indexFile := "index.json"
+	writeFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		assert.Equal(t, fmt.Sprintf("%s/%s/%s/%s/%s", dataLocation, db, blob, indexesDirectory, indexFile), filePath)
+		indexRecordsBytes, _ := json.Marshal(indexRecords)
+		assert.Equal(t, indexRecordsBytes, fileData)
+		return nil
+	}
+
+	err := im.WriteData(db, blob, indexFile, indexRecords)
+
+	assert.True(t, writeFileCalled)
+	assert.Nil(t, err)
+}
+
+func TestUnit_WriteData_FailsOnWriteIndexRecordsError(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexRecords := diskModels.IndexRecords{
+		"index_1": "page_1",
+		"index_2": "page_1",
+	}
+	indexFile := "index.json"
+	writeFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		return assert.AnError
+	}
+
+	err := im.WriteData(db, blob, indexFile, indexRecords)
+
+	assert.True(t, writeFileCalled)
+	assert.NotNil(t, err)
+}
+
+func TestUnit_Delete_DeletesIndexFile(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	indexes := diskModels.Indexes{
+		"a": diskModels.IndexItem{FileNames: []string{"other_file", indexFile}},
+	}
+	writeFileCalled := false
+	deleteFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		indexesBytes, _ := json.Marshal(indexes)
+		return indexesBytes, nil
+	}
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		assert.Equal(t, fmt.Sprintf("%s/%s/%s/%s", dataLocation, db, blob, indexesFile), filePath)
+		indexesBytes, _ := json.Marshal(diskModels.Indexes{
+			"a": diskModels.IndexItem{FileNames: []string{"other_file"}},
+		})
+		assert.Equal(t, indexesBytes, fileData)
+		return nil
+	}
+	im.deleteFileFunc = func(filePath string) error {
+		deleteFileCalled = true
+		assert.Equal(t, fmt.Sprintf("%s/%s/%s/%s/%s", dataLocation, db, blob, indexesDirectory, indexFile), filePath)
+		return nil
+	}
+
+	phantomFile, err := im.Delete(db, blob, indexFile)
+
+	assert.True(t, writeFileCalled)
+	assert.True(t, deleteFileCalled)
+	assert.Nil(t, err)
+	assert.False(t, phantomFile)
+}
+
+func TestUnit_Delete_FailsOnGetIndexesFileError(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	writeFileCalled := false
+	deleteFileCalled := false
+	getFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		getFileCalled = true
+		return nil, assert.AnError
+	}
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		return nil
+	}
+	im.deleteFileFunc = func(filePath string) error {
+		deleteFileCalled = true
+		return nil
+	}
+
+	phantomFile, err := im.Delete(db, blob, indexFile)
+
+	assert.True(t, getFileCalled)
+	assert.False(t, writeFileCalled)
+	assert.False(t, deleteFileCalled)
+	assert.NotNil(t, err)
+	assert.False(t, phantomFile)
+}
+
+func TestUnit_Delete_FailsOnWriteIndexesFile(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	indexes := diskModels.Indexes{
+		"a": diskModels.IndexItem{FileNames: []string{"other_file", indexFile}},
+	}
+	writeFileCalled := false
+	deleteFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		indexesBytes, _ := json.Marshal(indexes)
+		return indexesBytes, nil
+	}
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		return assert.AnError
+	}
+	im.deleteFileFunc = func(filePath string) error {
+		deleteFileCalled = true
+		return nil
+	}
+
+	phantomFile, err := im.Delete(db, blob, indexFile)
+
+	assert.True(t, writeFileCalled)
+	assert.False(t, deleteFileCalled)
+	assert.NotNil(t, err)
+	assert.False(t, phantomFile)
+}
+
+func TestUnit_Delete_FailsOnDeleteIndexFile(t *testing.T) {
+	dataLocation := "dataLocation"
+	db := "db"
+	blob := "blob"
+	indexFile := "index.json"
+	indexes := diskModels.Indexes{
+		"a": diskModels.IndexItem{FileNames: []string{"other_file", indexFile}},
+	}
+	writeFileCalled := false
+	deleteFileCalled := false
+	im := createTestIndexManager(dataLocation)
+	im.getFileFunc = func(filePath string) ([]byte, error) {
+		indexesBytes, _ := json.Marshal(indexes)
+		return indexesBytes, nil
+	}
+	im.writeFileFunc = func(filePath string, fileData []byte) error {
+		writeFileCalled = true
+		return nil
+	}
+	im.deleteFileFunc = func(filePath string) error {
+		deleteFileCalled = true
+		return assert.AnError
+	}
+
+	phantomFile, err := im.Delete(db, blob, indexFile)
+
+	assert.True(t, writeFileCalled)
+	assert.True(t, deleteFileCalled)
+	assert.NotNil(t, err)
+	assert.True(t, phantomFile)
+}

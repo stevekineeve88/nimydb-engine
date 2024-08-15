@@ -117,10 +117,7 @@ func (idm *indexManager) GetData(db string, blob string, indexFileName string) (
 }
 
 func (idm *indexManager) WriteData(db string, blob string, indexFileName string, data diskModels.IndexRecords) error {
-	dataBytes, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
+	dataBytes, _ := json.Marshal(data)
 	return idm.writeFileFunc(fmt.Sprintf("%s/%s", idm.getIndexesDirectoryName(db, blob), indexFileName), dataBytes)
 }
 
