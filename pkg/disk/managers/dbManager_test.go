@@ -2,8 +2,8 @@ package diskManagers
 
 import (
 	"fmt"
-	"github.com/stevekineeve88/nimydb-engine/pkg/disk/test/mocks"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
+	"github.com/stevekineeve88/nimydb-engine/pkg/test/utils"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"reflect"
@@ -140,7 +140,7 @@ func TestUnit_Exists_ExistsOnStatDB(t *testing.T) {
 	dbm.osStatFunc = func(name string) (os.FileInfo, error) {
 		called = true
 		assert.Equal(t, fmt.Sprintf("%s/%s", dataLocation, db), name)
-		return diskMocks.MockFileInfo{}, nil
+		return testUtils.MockFileInfo{}, nil
 	}
 
 	exists := dbm.Exists(db)
