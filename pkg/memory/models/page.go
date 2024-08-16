@@ -7,6 +7,15 @@ import (
 	"sync"
 )
 
+type PageMapI interface {
+	Initialize() error
+	Get(fileName string) (*Page, error)
+	GetAll() []*Page
+	Add() (*Page, error)
+	Delete(fileName string) (bool, error)
+	GetCurrentPage() (*Page, error)
+}
+
 type PageMap struct {
 	m               *sync.Mutex
 	itemMap         map[string]*Page
@@ -18,8 +27,8 @@ type PageMap struct {
 	dataCaching     bool
 }
 
-func NewPageMap(db string, blob string, dataLocation string, dataCaching bool) PageMap {
-	return PageMap{
+func NewPageMap(db string, blob string, dataLocation string, dataCaching bool) PageMapI {
+	return &PageMap{
 		m:               &sync.Mutex{},
 		itemMap:         make(map[string]*Page),
 		currentPage:     nil,
@@ -156,4 +165,8 @@ func (p *Page) Write(data diskModels.PageRecords) error {
 		p.cache = data
 	}
 	return nil
+}
+
+func (p *Page) GetFileName() string {
+	return p.fileName
 }

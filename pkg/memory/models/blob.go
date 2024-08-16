@@ -10,29 +10,33 @@ import (
 )
 
 type BlobMap struct {
-	m               *sync.Mutex
-	itemMap         map[string]*Blob
-	db              string
-	dataLocation    string
-	dataCaching     bool
-	blobDiskManager diskManagers.BlobManager
+	m                  sync.Locker
+	itemMap            map[string]*Blob
+	db                 string
+	dataLocation       string
+	dataCaching        bool
+	blobDiskManager    diskManagers.BlobManager
+	initializeBlobFunc func(db string, blob string, dataLocation string, format diskModels.Format, partition *diskModels.Partition, dataCaching bool) (Blob, error)
+	createBlobFunc     func(db string, blob string, dataLocation string, dataCaching bool) (Blob, error)
 }
 
 func NewBlobMap(db string, dataLocation string, dataCaching bool) BlobMap {
 	return BlobMap{
-		m:               &sync.Mutex{},
-		itemMap:         make(map[string]*Blob),
-		db:              db,
-		dataLocation:    dataLocation,
-		dataCaching:     dataCaching,
-		blobDiskManager: diskManagers.CreateBlobManager(dataLocation),
+		m:                  &sync.Mutex{},
+		itemMap:            make(map[string]*Blob),
+		db:                 db,
+		dataLocation:       dataLocation,
+		dataCaching:        dataCaching,
+		blobDiskManager:    diskManagers.CreateBlobManager(dataLocation),
+		initializeBlobFunc: InitializeBlob,
+		createBlobFunc:     CreateBlob,
 	}
 }
 
 func (bm *BlobMap) Add(blob string, format diskModels.Format, partition *diskModels.Partition) (*Blob, error) {
 	bm.m.Lock()
 	defer bm.m.Unlock()
-	blobObj, err := InitializeBlob(bm.db, blob, bm.dataLocation, format, partition, bm.dataCaching)
+	blobObj, err := bm.initializeBlobFunc(bm.db, blob, bm.dataLocation, format, partition, bm.dataCaching)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +50,7 @@ func (bm *BlobMap) Get(blob string) (*Blob, error) {
 	if blobObj, ok := bm.itemMap[blob]; ok {
 		return blobObj, nil
 	}
-	blobObj, err := CreateBlob(bm.db, blob, bm.dataLocation, bm.dataCaching)
+	blobObj, err := bm.createBlobFunc(bm.db, blob, bm.dataLocation, bm.dataCaching)
 	if err != nil {
 		return nil, err
 	}
@@ -94,40 +98,35 @@ func (bm *BlobMap) ConvertToPageRecords() []diskModels.PageRecord {
 type PageRecordsMap map[string]diskModels.PageRecords
 
 type Blob struct {
-	m                    *sync.Mutex
+	m                    sync.Locker
 	blob                 string
 	db                   string
-	pageMap              *PageMap
-	indexMap             *IndexMap
-	partitionMap         *PartitionMap
+	pageMap              PageMapI
+	indexMap             IndexMapI
+	partitionMap         PartitionMapI
 	partition            diskModels.Partition
 	format               diskModels.Format
 	indexDiskManager     diskManagers.IndexManager
 	partitionDiskManager diskManagers.PartitionManager
-	blobDiskManager      diskManagers.BlobManager
 }
 
 func CreateBlob(db string, blob string, dataLocation string, dataCaching bool) (Blob, error) {
 	indexDiskManager := diskManagers.CreateIndexManager(dataLocation)
 	partitionDiskManager := diskManagers.CreatePartitionManager(dataLocation)
-	blobDiskManager := diskManagers.CreateBlobManager(dataLocation)
 	formatDiskManager := diskManagers.CreateFormatManager(dataLocation)
 
 	pageMap := NewPageMap(db, blob, dataLocation, dataCaching)
-	indexMap := NewIndexMap(db, blob, dataLocation, dataCaching)
-	partitionMap := NewPartitionMap(db, blob, dataLocation, &pageMap)
 
 	blobStruct := Blob{
 		m:                    &sync.Mutex{},
 		blob:                 blob,
 		db:                   db,
-		pageMap:              &pageMap,
-		indexMap:             &indexMap,
-		partitionMap:         &partitionMap,
+		pageMap:              pageMap,
+		indexMap:             NewIndexMap(db, blob, dataLocation, dataCaching),
+		partitionMap:         NewPartitionMap(db, blob, dataLocation, pageMap),
 		partition:            diskModels.Partition{},
 		indexDiskManager:     indexDiskManager,
 		partitionDiskManager: partitionDiskManager,
-		blobDiskManager:      blobDiskManager,
 	}
 
 	format, err := formatDiskManager.Get(db, blob)
@@ -200,8 +199,6 @@ func InitializeBlob(db string, blob string, dataLocation string, format diskMode
 	}
 
 	pageMap := NewPageMap(db, blob, dataLocation, dataCaching)
-	indexMap := NewIndexMap(db, blob, dataLocation, dataCaching)
-	partitionMap := NewPartitionMap(db, blob, dataLocation, &pageMap)
 
 	partitionObj := diskModels.Partition{}
 	if partition != nil {
@@ -212,23 +209,14 @@ func InitializeBlob(db string, blob string, dataLocation string, format diskMode
 		m:                    &sync.Mutex{},
 		blob:                 blob,
 		db:                   db,
-		pageMap:              &pageMap,
-		indexMap:             &indexMap,
-		partitionMap:         &partitionMap,
+		pageMap:              pageMap,
+		indexMap:             NewIndexMap(db, blob, dataLocation, dataCaching),
+		partitionMap:         NewPartitionMap(db, blob, dataLocation, pageMap),
 		partition:            partitionObj,
 		format:               format,
 		indexDiskManager:     indexDiskManager,
 		partitionDiskManager: partitionDiskManager,
-		blobDiskManager:      blobDiskManager,
 	}, nil
-}
-
-func (b *Blob) GetFormat() diskModels.Format {
-	return b.format
-}
-
-func (b *Blob) GetPartition() diskModels.Partition {
-	return b.partition
 }
 
 func (b *Blob) GetByRecordId(pageRecordId string) (PageRecordsMap, error) {
@@ -304,7 +292,7 @@ func (b *Blob) GetFullScan(filterItems []FilterItem) (PageRecordsMap, error) {
 				currentFileIndex++
 				continue
 			}
-			total[pages[currentFileIndex].fileName] = groupItem
+			total[pages[currentFileIndex].GetFileName()] = groupItem
 			currentFileIndex++
 		}
 	}
@@ -349,7 +337,7 @@ func (b *Blob) GetByPartition(searchPartition SearchPartition, filterItems []Fil
 					currentFileIndex++
 					continue
 				}
-				total[pages[currentFileIndex].fileName] = groupItem
+				total[pages[currentFileIndex].GetFileName()] = groupItem
 				currentFileIndex++
 			}
 		}
@@ -414,7 +402,7 @@ func (b *Blob) Add(insertPageRecords []diskModels.PageRecord) (PageRecordsMap, e
 		return nil, err
 	}
 	total := PageRecordsMap{}
-	total[currentPage.fileName] = diskModels.PageRecords{}
+	total[currentPage.GetFileName()] = diskModels.PageRecords{}
 	indexes := diskModels.IndexRecords{}
 	for _, insertPageRecord := range insertPageRecords {
 		formattedInsertRecord, err := formatter.FormatRecord(insertPageRecord)
@@ -423,25 +411,25 @@ func (b *Blob) Add(insertPageRecords []diskModels.PageRecord) (PageRecordsMap, e
 		}
 		lastRecordId := uuid.New().String()
 		pageRecords[lastRecordId] = formattedInsertRecord
-		total[currentPage.fileName][lastRecordId] = formattedInsertRecord
-		indexes[lastRecordId] = currentPage.fileName
+		total[currentPage.GetFileName()][lastRecordId] = formattedInsertRecord
+		indexes[lastRecordId] = currentPage.GetFileName()
 		if len(pageRecords) > memoryConstants.MaxPageSize {
 			err = currentPage.Write(pageRecords)
 			if err != nil {
-				delete(total, currentPage.fileName)
+				delete(total, currentPage.GetFileName())
 				return total, err
 			}
 			currentPage, err = b.pageMap.Add()
 			if err != nil {
 				return total, err
 			}
-			total[currentPage.fileName] = diskModels.PageRecords{}
+			total[currentPage.GetFileName()] = diskModels.PageRecords{}
 			pageRecords = diskModels.PageRecords{}
 		}
 	}
 	err = currentPage.Write(pageRecords)
 	if err != nil {
-		delete(total, currentPage.fileName)
+		delete(total, currentPage.GetFileName())
 		return total, err
 	}
 	err = b.addIndexes(indexes)
@@ -548,7 +536,7 @@ func (b *Blob) UpdateByPartition(updateRecord diskModels.PageRecord, searchParti
 					currentFileIndex++
 					continue
 				}
-				total[pages[currentFileIndex].fileName] = groupItem
+				total[pages[currentFileIndex].GetFileName()] = groupItem
 				currentFileIndex++
 			}
 		}
@@ -595,7 +583,7 @@ func (b *Blob) Update(updateRecord diskModels.PageRecord, filterItems []FilterIt
 				currentFileIndex++
 				continue
 			}
-			total[pages[currentFileIndex].fileName] = groupItem
+			total[pages[currentFileIndex].GetFileName()] = groupItem
 			currentFileIndex++
 		}
 	}
@@ -696,7 +684,7 @@ func (b *Blob) DeleteByPartition(searchPartition SearchPartition, filterItems []
 				for pageRecordId, _ := range groupItem {
 					pageRecordIds = append(pageRecordIds, pageRecordId)
 				}
-				total[pages[currentFileIndex].fileName] = groupItem
+				total[pages[currentFileIndex].GetFileName()] = groupItem
 				currentFileIndex++
 			}
 		}
@@ -737,7 +725,7 @@ func (b *Blob) Delete(filterItems []FilterItem) (PageRecordsMap, error) {
 			for pageRecordId, _ := range groupItem {
 				pageRecordIds = append(pageRecordIds, pageRecordId)
 			}
-			total[pages[currentFileIndex].fileName] = groupItem
+			total[pages[currentFileIndex].GetFileName()] = groupItem
 			currentFileIndex++
 		}
 	}
@@ -822,11 +810,11 @@ func (b *Blob) SearchPageDelete(page *Page, filter Filter, groups *[memoryConsta
 	}
 	if affected {
 		if len(pageData) == 0 {
-			isPhantomFile, err := b.pageMap.Delete(page.fileName)
+			isPhantomFile, err := b.pageMap.Delete(page.GetFileName())
 			if (err == nil || isPhantomFile) && b.partition.Keys != nil {
 				hashKey, err := b.partitionDiskManager.GetHashKey(b.partition, groupItem[pageRecordIds[0]])
 				if err == nil {
-					_ = b.partitionMap.Delete(hashKey, page.fileName)
+					_ = b.partitionMap.Delete(hashKey, page.GetFileName())
 				}
 			}
 		} else {
@@ -882,7 +870,7 @@ func (b *Blob) addRecordsByPartition(hashKeyFile string, insertPageRecords []dis
 		if err != nil {
 			return PageRecordsMap{}, err
 		}
-		err = b.partitionMap.Add(hashKeyFile, page.fileName)
+		err = b.partitionMap.Add(hashKeyFile, page.GetFileName())
 		if err != nil {
 			return PageRecordsMap{}, err
 		}
@@ -897,17 +885,17 @@ func (b *Blob) addRecordsByPartition(hashKeyFile string, insertPageRecords []dis
 	}
 	lastPageRecordId := ""
 	total := PageRecordsMap{}
-	total[currentPage.fileName] = diskModels.PageRecords{}
+	total[currentPage.GetFileName()] = diskModels.PageRecords{}
 	indexes := diskModels.IndexRecords{}
 	for _, insertPageRecord := range insertPageRecords {
 		lastPageRecordId = uuid.New().String()
 		pageRecords[lastPageRecordId] = insertPageRecord
-		total[currentPage.fileName][lastPageRecordId] = insertPageRecord
-		indexes[lastPageRecordId] = currentPage.fileName
+		total[currentPage.GetFileName()][lastPageRecordId] = insertPageRecord
+		indexes[lastPageRecordId] = currentPage.GetFileName()
 		if len(pageRecords) > memoryConstants.MaxPageSize {
 			err = currentPage.Write(pageRecords)
 			if err != nil {
-				delete(total, currentPage.fileName)
+				delete(total, currentPage.GetFileName())
 				return total, err
 			}
 			pageRecords = diskModels.PageRecords{}
@@ -915,16 +903,16 @@ func (b *Blob) addRecordsByPartition(hashKeyFile string, insertPageRecords []dis
 			if err != nil {
 				return total, err
 			}
-			err = b.partitionMap.Add(hashKeyFile, currentPage.fileName)
+			err = b.partitionMap.Add(hashKeyFile, currentPage.GetFileName())
 			if err != nil {
 				return total, err
 			}
-			total[currentPage.fileName] = diskModels.PageRecords{}
+			total[currentPage.GetFileName()] = diskModels.PageRecords{}
 		}
 	}
 	err = currentPage.Write(pageRecords)
 	if err != nil {
-		delete(total, currentPage.fileName)
+		delete(total, currentPage.GetFileName())
 		return total, err
 	}
 	return total, b.addIndexes(indexes)
@@ -944,22 +932,22 @@ func (b *Blob) addIndexes(indexes diskModels.IndexRecords) error {
 			}
 		}
 		currentIndex = index
-		indexPrefixMap[prefix] = currentIndex.fileName
-		_, ok := indexFileMap[currentIndex.fileName]
+		indexPrefixMap[prefix] = currentIndex.GetFileName()
+		_, ok := indexFileMap[currentIndex.GetFileName()]
 		if !ok {
 			indexData, err := currentIndex.Read()
 			if err != nil {
 				return err
 			}
-			indexFileMap[currentIndex.fileName] = indexData
+			indexFileMap[currentIndex.GetFileName()] = indexData
 		}
-		indexFileMap[currentIndex.fileName][pageRecordId] = pageFile
-		if len(indexFileMap[currentIndex.fileName]) > memoryConstants.MaxIndexSize {
-			err = currentIndex.Write(indexFileMap[currentIndex.fileName])
+		indexFileMap[currentIndex.GetFileName()][pageRecordId] = pageFile
+		if len(indexFileMap[currentIndex.GetFileName()]) > memoryConstants.MaxIndexSize {
+			err = currentIndex.Write(indexFileMap[currentIndex.GetFileName()])
 			if err != nil {
 				return err
 			}
-			delete(indexFileMap, currentIndex.fileName)
+			delete(indexFileMap, currentIndex.GetFileName())
 			delete(indexPrefixMap, prefix)
 			_, err = b.indexMap.Add(pageRecordId)
 			if err != nil {
@@ -1000,7 +988,7 @@ func (b *Blob) deleteIndexes(pageRecordIds []string) {
 		for _, index := range indexes {
 			length, err := index.Delete(pageRecordIdMap[prefix])
 			if err == nil && length == 0 {
-				_ = b.indexMap.Delete(prefix, index.fileName)
+				_ = b.indexMap.Delete(prefix, index.GetFileName())
 			}
 		}
 	}

@@ -23,7 +23,7 @@ type formatManager struct {
 	getFileFunc    func(filePath string) ([]byte, error)
 }
 
-var formatManagerInstance *formatManager
+var formatManagerInstance FormatManager
 
 func CreateFormatManager(dataLocation string) FormatManager {
 	if formatManagerInstance == nil {
@@ -35,6 +35,10 @@ func CreateFormatManager(dataLocation string) FormatManager {
 		}
 	}
 	return formatManagerInstance
+}
+
+func DestructFormatManager() {
+	formatManagerInstance = nil
 }
 
 func (fdm *formatManager) Create(db string, blob string, format diskModels.Format) error {

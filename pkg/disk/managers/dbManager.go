@@ -21,7 +21,7 @@ type dbManager struct {
 	osStatFunc         func(name string) (os.FileInfo, error)
 }
 
-var dbManagerInstance *dbManager
+var dbManagerInstance DBManager
 
 func CreateDBManager(dataLocation string) DBManager {
 	if dbManagerInstance == nil {

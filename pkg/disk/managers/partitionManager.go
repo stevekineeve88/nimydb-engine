@@ -38,7 +38,7 @@ type partitionManager struct {
 	deleteFileFunc     func(filePath string) error
 }
 
-var partitionManagerInstance *partitionManager
+var partitionManagerInstance PartitionManager
 
 func CreatePartitionManager(dataLocation string) PartitionManager {
 	if partitionManagerInstance == nil {
@@ -53,6 +53,10 @@ func CreatePartitionManager(dataLocation string) PartitionManager {
 		}
 	}
 	return partitionManagerInstance
+}
+
+func DestructPartitionManager() {
+	partitionManagerInstance = nil
 }
 
 func (pdm *partitionManager) Initialize(db string, blob string, partition diskModels.Partition) error {

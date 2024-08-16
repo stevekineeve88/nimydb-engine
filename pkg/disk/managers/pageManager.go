@@ -31,7 +31,7 @@ type pageManager struct {
 	uuidFunc       func() string
 }
 
-var pageManagerInstance *pageManager
+var pageManagerInstance PageManager
 
 func CreatePageManager(dataLocation string) PageManager {
 	if pageManagerInstance == nil {
@@ -46,6 +46,10 @@ func CreatePageManager(dataLocation string) PageManager {
 		}
 	}
 	return pageManagerInstance
+}
+
+func DestructPageManager() {
+	pageManagerInstance = nil
 }
 
 func (pdm *pageManager) Initialize(db string, blob string) error {

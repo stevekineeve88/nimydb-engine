@@ -8,6 +8,15 @@ import (
 	"sync"
 )
 
+type IndexMapI interface {
+	Initialize() error
+	Get(prefix string, fileName string) (*Index, error)
+	GetByPrefix(prefix string) ([]*Index, error)
+	Add(pageRecordId string) (*Index, error)
+	Delete(prefix string, fileName string) error
+	GetCurrentIndex(prefix string) (*Index, error)
+}
+
 type IndexMap struct {
 	m                *sync.Mutex
 	itemMap          IndexPrefixMap
@@ -22,8 +31,8 @@ type IndexMap struct {
 type IndexPrefixMap map[string]map[string]*Index
 type IndexPrefixCurrentPageMap map[string]*Index
 
-func NewIndexMap(db string, blob string, dataLocation string, dataCaching bool) IndexMap {
-	return IndexMap{
+func NewIndexMap(db string, blob string, dataLocation string, dataCaching bool) IndexMapI {
+	return &IndexMap{
 		m:                &sync.Mutex{},
 		itemMap:          IndexPrefixMap{},
 		currentPages:     IndexPrefixCurrentPageMap{},
@@ -167,6 +176,10 @@ func (i *Index) Delete(pageRecordIds []string) (int, error) {
 		delete(indexRecords, pageRecordId)
 	}
 	return len(indexRecords), i._write(indexRecords)
+}
+
+func (i *Index) GetFileName() string {
+	return i.fileName
 }
 
 func (i *Index) _read() (diskModels.IndexRecords, error) {

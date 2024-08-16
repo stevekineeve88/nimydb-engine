@@ -33,7 +33,7 @@ type indexManager struct {
 	uuidFunc       func() string
 }
 
-var indexManagerInstance *indexManager
+var indexManagerInstance IndexManager
 
 func CreateIndexManager(dataLocation string) IndexManager {
 	if indexManagerInstance == nil {
@@ -48,6 +48,10 @@ func CreateIndexManager(dataLocation string) IndexManager {
 		}
 	}
 	return indexManagerInstance
+}
+
+func DestructIndexManager() {
+	indexManagerInstance = nil
 }
 
 func (idm *indexManager) Initialize(db string, blob string) error {

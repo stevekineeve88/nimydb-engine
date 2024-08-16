@@ -6,10 +6,19 @@ import (
 	"sync"
 )
 
+type PartitionMapI interface {
+	Initialize() error
+	GetByHash(hashKeyFile string) ([]*Page, error)
+	GetAllHashKeys() []string
+	Add(hashKeyFile string, pageFileName string) error
+	Delete(hashKeyFile string, pageFileName string) error
+	GetCurrentPage(hashKeyFile string) (*Page, error)
+}
+
 type PartitionMap struct {
 	m                    *sync.Mutex
 	itemMap              PartitionHashMap
-	pageMap              *PageMap
+	pageMap              PageMapI
 	currentPages         PartitionHashCurrentPageMap
 	db                   string
 	blob                 string
@@ -20,8 +29,8 @@ type PartitionMap struct {
 type PartitionHashMap map[string][]string
 type PartitionHashCurrentPageMap map[string]string
 
-func NewPartitionMap(db string, blob string, dataLocation string, pageMap *PageMap) PartitionMap {
-	return PartitionMap{
+func NewPartitionMap(db string, blob string, dataLocation string, pageMap PageMapI) PartitionMapI {
+	return &PartitionMap{
 		m:                    &sync.Mutex{},
 		itemMap:              PartitionHashMap{},
 		pageMap:              pageMap,

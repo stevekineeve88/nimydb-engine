@@ -18,7 +18,7 @@ type blobManager struct {
 	getDirContentsFunc func(directory string) ([]string, error)
 }
 
-var blobManagerInstance *blobManager
+var blobManagerInstance BlobManager
 
 func CreateBlobManager(dataLocation string) BlobManager {
 	if blobManagerInstance == nil {
@@ -30,6 +30,10 @@ func CreateBlobManager(dataLocation string) BlobManager {
 		}
 	}
 	return blobManagerInstance
+}
+
+func DestructBlobManager() {
+	blobManagerInstance = nil
 }
 
 func (bdm *blobManager) Create(db string, blob string) error {
