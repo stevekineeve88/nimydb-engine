@@ -9,17 +9,17 @@ import (
 
 type PageMapI interface {
 	Initialize() error
-	Get(fileName string) (*Page, error)
-	GetAll() []*Page
-	Add() (*Page, error)
+	Get(fileName string) (PageI, error)
+	GetAll() []PageI
+	Add() (PageI, error)
 	Delete(fileName string) (bool, error)
-	GetCurrentPage() (*Page, error)
+	GetCurrentPage() (PageI, error)
 }
 
 type PageMap struct {
 	m               *sync.Mutex
-	itemMap         map[string]*Page
-	currentPage     *Page
+	itemMap         map[string]PageI
+	currentPage     PageI
 	db              string
 	blob            string
 	pageDiskManager diskManagers.PageManager
@@ -30,7 +30,7 @@ type PageMap struct {
 func NewPageMap(db string, blob string, dataLocation string, dataCaching bool) PageMapI {
 	return &PageMap{
 		m:               &sync.Mutex{},
-		itemMap:         make(map[string]*Page),
+		itemMap:         make(map[string]PageI),
 		currentPage:     nil,
 		db:              db,
 		blob:            blob,
@@ -53,27 +53,28 @@ func (pm *PageMap) Initialize() error {
 	return nil
 }
 
-func (pm *PageMap) Get(fileName string) (*Page, error) {
+func (pm *PageMap) Get(fileName string) (PageI, error) {
 	pm.m.Lock()
 	defer pm.m.Unlock()
-	page, ok := pm.itemMap[fileName]
-	if !ok {
-		return nil, fmt.Errorf("%s not found in page map", fileName)
+	if page, ok := pm.itemMap[fileName]; ok && page != nil {
+		return page, nil
 	}
-	return page, nil
+	return nil, fmt.Errorf("%s not found in page map", fileName)
 }
 
-func (pm *PageMap) GetAll() []*Page {
+func (pm *PageMap) GetAll() []PageI {
 	pm.m.Lock()
 	defer pm.m.Unlock()
-	pages := []*Page{}
+	pages := []PageI{}
 	for _, page := range pm.itemMap {
-		pages = append(pages, page)
+		if page != nil {
+			pages = append(pages, page)
+		}
 	}
 	return pages
 }
 
-func (pm *PageMap) Add() (*Page, error) {
+func (pm *PageMap) Add() (PageI, error) {
 	pm.m.Lock()
 	defer pm.m.Unlock()
 	fileName, err := pm.pageDiskManager.Create(pm.db, pm.blob)
@@ -97,19 +98,25 @@ func (pm *PageMap) Delete(fileName string) (bool, error) {
 		return isPhantomFile, err
 	}
 	delete(pm.itemMap, fileName)
-	if pm.currentPage != nil && fileName == pm.currentPage.fileName {
+	if pm.currentPage != nil && fileName == pm.currentPage.GetFileName() {
 		pm.currentPage = nil
 	}
 	return isPhantomFile, err
 }
 
-func (pm *PageMap) GetCurrentPage() (*Page, error) {
+func (pm *PageMap) GetCurrentPage() (PageI, error) {
 	pm.m.Lock()
 	defer pm.m.Unlock()
 	if pm.currentPage == nil {
 		return nil, fmt.Errorf("current page not set")
 	}
 	return pm.currentPage, nil
+}
+
+type PageI interface {
+	Read() (diskModels.PageRecords, error)
+	Write(data diskModels.PageRecords) error
+	GetFileName() string
 }
 
 type Page struct {
@@ -122,7 +129,7 @@ type Page struct {
 	cache           diskModels.PageRecords
 }
 
-func NewPage(db string, blob string, fileName string, dataLocation string, dataCaching bool) *Page {
+func NewPage(db string, blob string, fileName string, dataLocation string, dataCaching bool) PageI {
 	return &Page{
 		m:               &sync.Mutex{},
 		fileName:        fileName,

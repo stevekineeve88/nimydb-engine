@@ -1,18 +1,20 @@
 package diskManagers
 
 import (
-	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
+	"strings"
 )
 
 const (
 	partitionsFile      = "partitions.json"
 	partitionsDirectory = "partitions"
+	hashKeyValueSep     = "\xbb"
+	hashKeyPairSep      = "\xcc"
 )
 
 type PartitionManager interface {
@@ -26,6 +28,7 @@ type PartitionManager interface {
 	Delete(db string, blob string, hashKeyFileName string) error
 	GetHashKey(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error)
 	CreateHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
+	CompareHashKeyItem(compare string, hashKeyFile string) bool
 }
 
 type partitionManager struct {
@@ -144,14 +147,15 @@ func (pdm *partitionManager) Delete(db string, blob string, hashKeyFileName stri
 }
 
 func (pdm *partitionManager) GetHashKey(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error) {
-	hashKey := ""
+	hashKeyItems := []string{}
 	for _, key := range partition.Keys {
 		hashKeyItem, err := pdm.GetHashKeyItem(key, pageRecord)
 		if err != nil {
-			return hashKey, err
+			return "", err
 		}
-		hashKey += hashKeyItem
+		hashKeyItems = append(hashKeyItems, hashKeyItem)
 	}
+	hashKey := base64.StdEncoding.EncodeToString([]byte(strings.Join(hashKeyItems, hashKeyPairSep)))
 	return fmt.Sprintf("%s.json", hashKey), nil
 }
 
@@ -160,9 +164,22 @@ func (pdm *partitionManager) GetHashKeyItem(partitionKey string, pageRecord disk
 	if !ok {
 		return "", errors.New(fmt.Sprintf("%s not found in page record", partitionKey))
 	}
-	hash := sha1.New()
-	hash.Write([]byte(fmt.Sprintf("%+v", pageRecordItem)))
-	return base64.URLEncoding.EncodeToString(hash.Sum(nil)), nil
+	return fmt.Sprintf("%s%s%+v", partitionKey, hashKeyValueSep, pageRecordItem), nil
+}
+
+func (pdm *partitionManager) CompareHashKeyItem(compare string, hashKeyFile string) bool {
+	hashKey := strings.Split(hashKeyFile, ".json")[0]
+	hashKeyDecoded, err := base64.StdEncoding.DecodeString(hashKey)
+	if err != nil {
+		return false
+	}
+	hashKeyDecodedItems := strings.Split(string(hashKeyDecoded), hashKeyPairSep)
+	for _, hashKeyDecodedItem := range hashKeyDecodedItems {
+		if hashKeyDecodedItem == compare {
+			return true
+		}
+	}
+	return false
 }
 
 func (pdm *partitionManager) CreateHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error) {

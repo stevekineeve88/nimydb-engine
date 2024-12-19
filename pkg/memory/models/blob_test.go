@@ -3,9 +3,9 @@ package memoryModels
 import (
 	"fmt"
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/managers"
-	"github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
-	"github.com/stevekineeve88/nimydb-engine/pkg/memory/constants"
-	"github.com/stevekineeve88/nimydb-engine/pkg/test/utils"
+	diskModels "github.com/stevekineeve88/nimydb-engine/pkg/disk/models"
+	memoryConstants "github.com/stevekineeve88/nimydb-engine/pkg/memory/constants"
+	testUtils "github.com/stevekineeve88/nimydb-engine/pkg/test/utils"
 	"github.com/stretchr/testify/assert"
 	"reflect"
 	"sync"
@@ -23,25 +23,11 @@ func createTestBlobMap(db string, dataLocation string, dataCaching bool, m sync.
 	}
 }
 
-func createTestBlob(
-	db string,
-	blob string,
-	dataLocation string,
-	dataCaching bool,
-	m sync.Locker,
-	partition diskModels.Partition,
-	format diskModels.Format,
-) Blob {
-	pageMap := NewPageMap(db, blob, dataLocation, dataCaching)
+func createTestBlob(db string, blob string, m sync.Locker) Blob {
 	return Blob{
 		m:                    m,
 		blob:                 blob,
 		db:                   db,
-		pageMap:              pageMap,
-		indexMap:             NewIndexMap(db, blob, dataLocation, dataCaching),
-		partitionMap:         NewPartitionMap(db, blob, dataLocation, pageMap),
-		partition:            partition,
-		format:               format,
 		indexDiskManager:     diskManagers.MockIndexManagerInstance,
 		partitionDiskManager: diskManagers.MockPartitionManagerInstance,
 	}
@@ -1047,4 +1033,1198 @@ func TestUnit_InitializeBlob_FailsOnPartitionsInitError(t *testing.T) {
 	assert.True(t, initializePartitionsCalled)
 	assert.True(t, deleteBlobCalled)
 	assert.NotNil(t, err)
+}
+
+func TestUnit_GetByRecordId_GetsRecord(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	lockedCalled := false
+	unlockedCalled := false
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {
+		lockedCalled = true
+	}, func() {
+		unlockedCalled = true
+	})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			assert.Equal(t, indexPrefix, prefix)
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			assert.Equal(t, pageFileName, fileName)
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	pageRecordsMap, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.False(t, lockedCalled)
+	assert.False(t, unlockedCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 1, len(pageRecordsMap))
+	assert.Equal(t, 1, len(pageRecordsMap[pageFileName]))
+	assert.Equal(t, pageRecord, pageRecordsMap[pageFileName])
+}
+
+func TestUnit_GetByRecordId_ReturnsEmptyIfNotFound(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	pageRecordsMap, err := b.GetByRecordId("wrong_record_id")
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.False(t, getPageCalled)
+	assert.False(t, pageReadCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByRecordId_SkipsNullIndexPointer(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := 0
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		nil,
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled++
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	_, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.Equal(t, 1, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.Nil(t, err)
+}
+
+func TestUnit_GetByRecordId_SkipsOnFailedIndexRead(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := 0
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled++
+				return nil, assert.AnError
+			},
+		},
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled++
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	result, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.Equal(t, 2, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.Nil(t, err)
+	assert.Equal(t, pageRecord, result[pageFileName])
+}
+
+func TestUnit_GetByRecordId_FailsOnPageGetError(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, assert.AnError
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	result, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.False(t, pageReadCalled)
+	assert.NotNil(t, err)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestUnit_GetByRecordId_FailsOnPageReadError(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return nil, assert.AnError
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	result, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.NotNil(t, err)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestUnit_GetByRecordId_FailsOnMissingRecordInPage(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return diskModels.PageRecords{
+				"wrong_id": {
+					"col_one": "sdf",
+					"col_two": 123,
+				},
+			}, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	result, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.NotNil(t, err)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestUnit_GetByRecordId_FailsOnFormatError(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"invalid_column": "some data here",
+			"col_two":        1,
+		},
+	}
+	indexPrefix := pageRecordId[0:1]
+	getByPrefixCalled := false
+	indexReadCalled := false
+	getPageCalled := false
+	pageReadCalled := false
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return indexPrefix
+	}
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	indexes := []IndexI{
+		&MockIndex{
+			ReadFunc: func() (diskModels.IndexRecords, error) {
+				indexReadCalled = true
+				return diskModels.IndexRecords{
+					pageRecordId: pageFileName,
+				}, nil
+			},
+		},
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+	}
+	mockIndexMap := &MockIndexMap{
+		GetByPrefixFunc: func(prefix string) ([]IndexI, error) {
+			getByPrefixCalled = true
+			return indexes, nil
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetFunc: func(fileName string) (PageI, error) {
+			getPageCalled = true
+			return page, nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.indexMap = mockIndexMap
+	b.pageMap = mockPageMap
+
+	result, err := b.GetByRecordId(pageRecordId)
+
+	assert.True(t, getByPrefixCalled)
+	assert.True(t, indexReadCalled)
+	assert.True(t, getPageCalled)
+	assert.True(t, pageReadCalled)
+	assert.NotNil(t, err)
+	assert.Equal(t, 0, len(result))
+}
+
+func TestUnit_GetFullScan_GetsRecords(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	lockedCalled := false
+	unlockedCalled := false
+	getAllPagesCalled := false
+	pageReadCalled := false
+	m := testUtils.CreateMockMutex(func() {
+		lockedCalled = true
+	}, func() {
+		unlockedCalled = true
+	})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetAllFunc: func() []PageI {
+			getAllPagesCalled = true
+			return []PageI{page}
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.pageMap = mockPageMap
+
+	pageRecordsMap, err := b.GetFullScan([]FilterItem{
+		{
+			Key:   "col_two",
+			Op:    "=",
+			Value: 1,
+		},
+	})
+
+	assert.True(t, getAllPagesCalled)
+	assert.True(t, pageReadCalled)
+	assert.False(t, lockedCalled)
+	assert.False(t, unlockedCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 1, len(pageRecordsMap))
+	assert.Equal(t, 1, len(pageRecordsMap[pageFileName]))
+	assert.Equal(t, pageRecord, pageRecordsMap[pageFileName])
+}
+
+func TestUnit_GetFullScan_SkipsEmptyPage(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	getAllPagesCalled := false
+	pageReadCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetAllFunc: func() []PageI {
+			getAllPagesCalled = true
+			return []PageI{page}
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.pageMap = mockPageMap
+
+	pageRecordsMap, err := b.GetFullScan([]FilterItem{
+		{
+			Key:   "col_two",
+			Op:    "=",
+			Value: 3,
+		},
+	})
+
+	assert.True(t, getAllPagesCalled)
+	assert.True(t, pageReadCalled)
+	assert.Nil(t, err)
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetFullScan_FailsOnFilterError(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageRecordId := "12345"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		pageRecordId: diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+	}
+	getAllPagesCalled := false
+	pageReadCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPageMap := &MockPageMap{
+		GetAllFunc: func() []PageI {
+			getAllPagesCalled = true
+			return []PageI{page}
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.pageMap = mockPageMap
+
+	pageRecordsMap, err := b.GetFullScan([]FilterItem{
+		{
+			Key:   "col_two",
+			Op:    "=",
+			Value: "WRONG_DATA_TYPE",
+		},
+	})
+
+	assert.False(t, getAllPagesCalled)
+	assert.False(t, pageReadCalled)
+	assert.NotNil(t, err)
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByPartition_GetsRecords(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		"12345": diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+		"11223": diskModels.PageRecord{
+			"col_one": "some other data",
+			"col_two": 1,
+		},
+	}
+	expectedHashKeyFile := "hashKeyFile.json"
+	expectedHashKeyItem := "hashKeyItem"
+	lockedCalled := false
+	unlockedCalled := false
+	pageReadCalled := false
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {
+		lockedCalled = true
+	}, func() {
+		unlockedCalled = true
+	})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			assert.Equal(t, expectedHashKeyFile, hashKeyFile)
+			return []PageI{page}, nil
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return expectedHashKeyItem, nil
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		assert.Equal(t, expectedHashKeyFile, hashKeyFile)
+		assert.Equal(t, expectedHashKeyItem, compare)
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{Keys: []string{"col_two"}}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{
+		{
+			Key:   "col_one",
+			Op:    "CONTAINS",
+			Value: "data",
+		},
+	})
+
+	assert.True(t, pageReadCalled)
+	assert.True(t, getAllHashKeysCalled)
+	assert.False(t, lockedCalled)
+	assert.False(t, unlockedCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 1, len(pageRecordsMap))
+	assert.Equal(t, 2, len(pageRecordsMap[pageFileName]))
+}
+
+func TestUnit_GetByPartition_SkipsEmptyPages(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		"12345": diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+		"11223": diskModels.PageRecord{
+			"col_one": "some other data",
+			"col_two": 1,
+		},
+	}
+	expectedHashKeyFile := "hashKeyFile.json"
+	expectedHashKeyItem := "hashKeyItem"
+	pageReadCalled := false
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return []PageI{page}, nil
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return expectedHashKeyItem, nil
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{Keys: []string{"col_two"}}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{
+		{
+			Key:   "col_one",
+			Op:    "CONTAINS",
+			Value: "some other random item",
+		},
+	})
+
+	assert.True(t, pageReadCalled)
+	assert.True(t, getAllHashKeysCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByPartition_SkipsOnNoPartitions(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		"12345": diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+		"11223": diskModels.PageRecord{
+			"col_one": "some other data",
+			"col_two": 1,
+		},
+	}
+	expectedHashKeyFile := "hashKeyFile.json"
+	expectedHashKeyItem := "hashKeyItem"
+	pageReadCalled := false
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return []PageI{page}, nil
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return expectedHashKeyItem, nil
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{})
+
+	assert.False(t, pageReadCalled)
+	assert.False(t, getAllHashKeysCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByPartition_FailsOnConvertFilterItem(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		"12345": diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+		"11223": diskModels.PageRecord{
+			"col_one": "some other data",
+			"col_two": 1,
+		},
+	}
+	expectedHashKeyFile := "hashKeyFile.json"
+	expectedHashKeyItem := "hashKeyItem"
+	pageReadCalled := false
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return []PageI{page}, nil
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return expectedHashKeyItem, nil
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{Keys: []string{"col_two"}}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{
+		{
+			Key:   "col_two",
+			Op:    "=",
+			Value: "WRONG_DATA_TYPE",
+		},
+	})
+
+	assert.False(t, pageReadCalled)
+	assert.False(t, getAllHashKeysCalled)
+	assert.NotNil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByPartition_FailsOnHashKeyFilter(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	pageFileName := "page.json"
+	pageRecord := diskModels.PageRecords{
+		"12345": diskModels.PageRecord{
+			"col_one": "some data here",
+			"col_two": 1,
+		},
+		"11223": diskModels.PageRecord{
+			"col_one": "some other data",
+			"col_two": 1,
+		},
+	}
+	expectedHashKeyFile := "hashKeyFile.json"
+	pageReadCalled := false
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			pageReadCalled = true
+			return pageRecord, nil
+		},
+		GetFileNameFunc: func() string {
+			return pageFileName
+		},
+	}
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return []PageI{page}, nil
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return "", assert.AnError
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{Keys: []string{"col_two"}}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{})
+
+	assert.False(t, pageReadCalled)
+	assert.True(t, getAllHashKeysCalled)
+	assert.NotNil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_GetByPartition_FailsOnGetByHashKey(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	expectedHashKeyFile := "hashKeyFile.json"
+	expectedHashKeyItem := "hashKeyItem"
+	getAllHashKeysCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	mockPartitionMap := &MockPartitionMap{
+		GetAllHashKeysFunc: func() []string {
+			getAllHashKeysCalled = true
+			return []string{
+				expectedHashKeyFile,
+			}
+		},
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return nil, assert.AnError
+		},
+	}
+	diskManagers.MockPartitionManagerInstance.GetHashKeyItemFunc = func(partitionKey string, pageRecord diskModels.PageRecord) (string, error) {
+		return expectedHashKeyItem, nil
+	}
+	diskManagers.MockPartitionManagerInstance.CompareHashKeyItemFunc = func(compare string, hashKeyFile string) bool {
+		return true
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = diskModels.Partition{Keys: []string{"col_two"}}
+	b.partitionMap = mockPartitionMap
+
+	pageRecordsMap, err := b.GetByPartition(SearchPartition{"col_two": 1}, []FilterItem{})
+
+	assert.True(t, getAllHashKeysCalled)
+	assert.NotNil(t, err)
+
+	assert.Equal(t, 0, len(pageRecordsMap))
+}
+
+func TestUnit_AddWithPartition_AddsWithPartition(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	expectedPartition := diskModels.Partition{Keys: []string{"col_two"}}
+	expectedPageRecord := diskModels.PageRecord{
+		"col_one": "some string",
+		"col_two": 2,
+	}
+	lockedCalled := false
+	unlockedCalled := false
+	m := testUtils.CreateMockMutex(func() {
+		lockedCalled = true
+	}, func() {
+		unlockedCalled = true
+	})
+	diskManagers.MockPartitionManagerInstance.GetHashKeyFunc = func(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error) {
+		assert.Equal(t, expectedPartition, partition)
+		assert.Equal(t, expectedPageRecord, pageRecord)
+		return "testHashKey", nil
+	}
+	diskManagers.MockIndexManagerInstance.GetPageRecordIdPrefixFunc = func(pageRecordId string) string {
+		return "prefix"
+	}
+	page := &MockPage{
+		ReadFunc: func() (diskModels.PageRecords, error) {
+			return diskModels.PageRecords{}, nil
+		},
+		GetFileNameFunc: func() string {
+			return "pageFile.json"
+		},
+		WriteFunc: func(data diskModels.PageRecords) error {
+			return nil
+		},
+	}
+	index := &MockIndex{
+		GetFileNameFunc: func() string {
+			return "myIndex.json"
+		},
+		ReadFunc: func() (diskModels.IndexRecords, error) {
+			return diskModels.IndexRecords{}, nil
+		},
+		WriteFunc: func(data diskModels.IndexRecords) error {
+			return nil
+		},
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+	b.format = diskModels.Format{
+		"col_one": diskModels.FormatItem{KeyType: memoryConstants.String},
+		"col_two": diskModels.FormatItem{KeyType: memoryConstants.Int},
+	}
+	b.partition = expectedPartition
+	b.partitionMap = &MockPartitionMap{
+		GetByHashFunc: func(hashKeyFile string) ([]PageI, error) {
+			return []PageI{page}, nil
+		},
+		GetCurrentPageFunc: func(hashKeyFile string) (PageI, error) {
+			return page, nil
+		},
+	}
+	b.indexMap = &MockIndexMap{
+		GetCurrentIndexFunc: func(prefix string) (IndexI, error) {
+			return index, nil
+		},
+		GetFunc: func(prefix string, fileName string) (IndexI, error) {
+			return index, nil
+		},
+	}
+
+	pageRecords, err := b.AddWithPartition([]diskModels.PageRecord{expectedPageRecord})
+
+	assert.True(t, lockedCalled)
+	assert.True(t, unlockedCalled)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 1, len(pageRecords))
+	assert.Equal(t, 1, len(pageRecords[page.GetFileName()]))
+	for _, pageRecord := range pageRecords[page.GetFileName()] {
+		assert.Equal(t, expectedPageRecord, pageRecord)
+	}
+}
+
+func TestUnit_AddWithPartition_NoAddOnMissingPartition(t *testing.T) {
+	expectedDB := "db"
+	expectedBlob := "blob"
+	expectedPageRecord := diskModels.PageRecord{
+		"col_one": "some string",
+		"col_two": 2,
+	}
+	getHashKeyCalled := false
+	m := testUtils.CreateMockMutex(func() {}, func() {})
+	diskManagers.MockPartitionManagerInstance.GetHashKeyFunc = func(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error) {
+		getHashKeyCalled = true
+		return "testHashKey", nil
+	}
+	b := createTestBlob(expectedDB, expectedBlob, m)
+
+	pageRecords, err := b.AddWithPartition([]diskModels.PageRecord{expectedPageRecord})
+	assert.Nil(t, err)
+	assert.False(t, getHashKeyCalled)
+	assert.Equal(t, 0, len(pageRecords))
 }

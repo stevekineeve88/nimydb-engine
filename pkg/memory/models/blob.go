@@ -230,20 +230,20 @@ func (b *Blob) GetByRecordId(pageRecordId string) (PageRecordsMap, error) {
 		}
 		indexRecords, err := indexFile.Read()
 		if err != nil {
-			return PageRecordsMap{}, nil
+			continue
 		}
 		if pageFile, ok := indexRecords[pageRecordId]; ok {
 			page, err := b.pageMap.Get(pageFile)
-			if !ok {
-				return PageRecordsMap{}, err
+			if err != nil {
+				return PageRecordsMap{}, fmt.Errorf("page not found: %s", pageFile)
 			}
 			data, err := page.Read()
 			if err != nil {
-				return PageRecordsMap{}, nil
+				return PageRecordsMap{}, fmt.Errorf("failed to read page: %s", pageFile)
 			}
 			record, ok := data[pageRecordId]
 			if !ok {
-				return PageRecordsMap{}, fmt.Errorf("record with id %s not found in page %s", pageRecordId, pageFile)
+				return PageRecordsMap{}, fmt.Errorf("corrupt record with id %s not found in page %s", pageRecordId, pageFile)
 			}
 			var formatter BlobFormatter
 			if b.IsPartition() {
@@ -280,7 +280,7 @@ func (b *Blob) GetFullScan(filterItems []FilterItem) (PageRecordsMap, error) {
 		threadIndex := 0
 		for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 			wg.Add(1)
-			go b.SearchPage(pages[threadItem], filter, &groups, &wg, threadIndex)
+			go b.searchPage(pages[threadItem], filter, &groups, &wg, threadIndex)
 			threadIndex++
 			threadItem++
 		}
@@ -308,7 +308,7 @@ func (b *Blob) GetByPartition(searchPartition SearchPartition, filterItems []Fil
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
-	hashKeyFiles, err := b.FilterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
+	hashKeyFiles, err := b.filterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
@@ -325,7 +325,7 @@ func (b *Blob) GetByPartition(searchPartition SearchPartition, filterItems []Fil
 			threadIndex := 0
 			for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 				wg.Add(1)
-				go b.SearchPage(pages[threadItem], filter, &groups, &wg, threadIndex)
+				go b.searchPage(pages[threadItem], filter, &groups, &wg, threadIndex)
 				threadIndex++
 				threadItem++
 			}
@@ -369,8 +369,8 @@ func (b *Blob) AddWithPartition(insertPageRecords []diskModels.PageRecord) (Page
 		hashKeyMap[hashKey] = append(hashKeyMap[hashKey], newInsertRecord)
 	}
 	total := PageRecordsMap{}
-	for hashKey, pageRecords := range hashKeyMap {
-		partitionTotal, err := b.addRecordsByPartition(hashKey, pageRecords)
+	for hashKeyFile, pageRecords := range hashKeyMap {
+		partitionTotal, err := b.addRecordsByPartition(hashKeyFile, pageRecords)
 		if err != nil {
 			return total, err
 		}
@@ -507,7 +507,7 @@ func (b *Blob) UpdateByPartition(updateRecord diskModels.PageRecord, searchParti
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
-	hashKeyFiles, err := b.FilterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
+	hashKeyFiles, err := b.filterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
@@ -524,7 +524,7 @@ func (b *Blob) UpdateByPartition(updateRecord diskModels.PageRecord, searchParti
 			threadIndex := 0
 			for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 				wg.Add(1)
-				go b.SearchPageUpdate(pages[threadItem], filter, &groups, &wg, threadIndex, updateRecordFormatted)
+				go b.searchPageUpdate(pages[threadItem], filter, &groups, &wg, threadIndex, updateRecordFormatted)
 				threadIndex++
 				threadItem++
 			}
@@ -571,7 +571,7 @@ func (b *Blob) Update(updateRecord diskModels.PageRecord, filterItems []FilterIt
 		threadIndex := 0
 		for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 			wg.Add(1)
-			go b.SearchPageUpdate(pages[threadItem], filter, &groups, &wg, threadIndex, updateRecordFormatted)
+			go b.searchPageUpdate(pages[threadItem], filter, &groups, &wg, threadIndex, updateRecordFormatted)
 			threadIndex++
 			threadItem++
 		}
@@ -651,7 +651,7 @@ func (b *Blob) DeleteByPartition(searchPartition SearchPartition, filterItems []
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
-	hashKeyFiles, err := b.FilterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
+	hashKeyFiles, err := b.filterHashKeyFiles(b.partitionMap.GetAllHashKeys(), searchPartition)
 	if err != nil {
 		return PageRecordsMap{}, err
 	}
@@ -668,7 +668,7 @@ func (b *Blob) DeleteByPartition(searchPartition SearchPartition, filterItems []
 			threadIndex := 0
 			for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 				wg.Add(1)
-				go b.SearchPageDelete(pages[threadItem], filter, &groups, &wg, threadIndex)
+				go b.searchPageDelete(pages[threadItem], filter, &groups, &wg, threadIndex)
 				threadIndex++
 				threadItem++
 			}
@@ -709,7 +709,7 @@ func (b *Blob) Delete(filterItems []FilterItem) (PageRecordsMap, error) {
 		threadIndex := 0
 		for threadItem < len(pages) && threadIndex < memoryConstants.SearchThreadCount {
 			wg.Add(1)
-			go b.SearchPageDelete(pages[threadItem], filter, &groups, &wg, threadIndex)
+			go b.searchPageDelete(pages[threadItem], filter, &groups, &wg, threadIndex)
 			threadIndex++
 			threadItem++
 		}
@@ -732,7 +732,11 @@ func (b *Blob) Delete(filterItems []FilterItem) (PageRecordsMap, error) {
 	return total, nil
 }
 
-func (b *Blob) SearchPage(page *Page, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int) {
+func (b *Blob) IsPartition() bool {
+	return b.partition.Keys != nil
+}
+
+func (b *Blob) searchPage(page PageI, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int) {
 	defer wg.Done()
 	if page == nil {
 		return
@@ -759,7 +763,7 @@ func (b *Blob) SearchPage(page *Page, filter Filter, groups *[memoryConstants.Se
 	groups[index] = groupItem
 }
 
-func (b *Blob) SearchPageUpdate(page *Page, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int, updateRecordFormatted diskModels.PageRecord) {
+func (b *Blob) searchPageUpdate(page PageI, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int, updateRecordFormatted diskModels.PageRecord) {
 	defer wg.Done()
 	if page == nil {
 		return
@@ -788,7 +792,7 @@ func (b *Blob) SearchPageUpdate(page *Page, filter Filter, groups *[memoryConsta
 	groups[index] = groupItem
 }
 
-func (b *Blob) SearchPageDelete(page *Page, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int) {
+func (b *Blob) searchPageDelete(page PageI, filter Filter, groups *[memoryConstants.SearchThreadCount]diskModels.PageRecords, wg *sync.WaitGroup, index int) {
 	defer wg.Done()
 	groupItem := diskModels.PageRecords{}
 	if page == nil {
@@ -828,36 +832,29 @@ func (b *Blob) SearchPageDelete(page *Page, filter Filter, groups *[memoryConsta
 	groups[index] = groupItem
 }
 
-func (b *Blob) FilterHashKeyFiles(hashKeys []string, searchPartition SearchPartition) ([]string, error) {
+func (b *Blob) filterHashKeyFiles(hashKeyFiles []string, searchPartition SearchPartition) ([]string, error) {
 	var foundFiles []string
-	for _, partitionHashKeyFileName := range hashKeys {
-		currentChar := 0
+	for _, hashKeyFile := range hashKeyFiles {
 		found := true
 		for _, partitionKey := range b.partition.Keys {
 			_, ok := searchPartition[partitionKey]
 			if !ok {
-				currentChar += 28
 				continue
 			}
-			valueHash, err := b.partitionDiskManager.GetHashKeyItem(partitionKey, diskModels.PageRecord(searchPartition))
+			valueHashKeyItem, err := b.partitionDiskManager.GetHashKeyItem(partitionKey, diskModels.PageRecord(searchPartition))
 			if err != nil {
 				return nil, err
 			}
-			if partitionHashKeyFileName[currentChar:currentChar+len(valueHash)] != valueHash {
+			if !b.partitionDiskManager.CompareHashKeyItem(valueHashKeyItem, hashKeyFile) {
 				found = false
 				break
 			}
-			currentChar += 28
 		}
 		if found {
-			foundFiles = append(foundFiles, partitionHashKeyFileName)
+			foundFiles = append(foundFiles, hashKeyFile)
 		}
 	}
 	return foundFiles, nil
-}
-
-func (b *Blob) IsPartition() bool {
-	return b.partition.Keys != nil
 }
 
 func (b *Blob) addRecordsByPartition(hashKeyFile string, insertPageRecords []diskModels.PageRecord) (PageRecordsMap, error) {
@@ -923,7 +920,7 @@ func (b *Blob) addIndexes(indexes diskModels.IndexRecords) error {
 	indexPrefixMap := make(map[string]string)
 	for pageRecordId, pageFile := range indexes {
 		prefix := b.indexDiskManager.GetPageRecordIdPrefix(pageRecordId)
-		var currentIndex *Index = nil
+		var currentIndex IndexI = nil
 		index, err := b.indexMap.GetCurrentIndex(prefix)
 		if err != nil {
 			index, err = b.indexMap.Add(pageRecordId)
@@ -970,7 +967,7 @@ func (b *Blob) addIndexes(indexes diskModels.IndexRecords) error {
 
 func (b *Blob) deleteIndexes(pageRecordIds []string) {
 	pageRecordIdMap := make(map[string][]string)
-	indexMap := make(map[string][]*Index)
+	indexMap := make(map[string][]IndexI)
 	for _, pageRecordId := range pageRecordIds {
 		prefix := b.indexDiskManager.GetPageRecordIdPrefix(pageRecordId)
 		if _, ok := pageRecordIdMap[prefix]; !ok {

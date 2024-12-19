@@ -1,7 +1,6 @@
 package diskManagers
 
 import (
-	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"github.com/stevekineeve88/nimydb-engine/pkg/disk/utils"
 	"github.com/stretchr/testify/assert"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -639,11 +639,11 @@ func TestUnit_GetHashKey_GetsHashKey(t *testing.T) {
 	pm := createTestPartitionManager(dataLocation)
 	keyItem1, _ := pm.GetHashKeyItem("col_1", pageRecord)
 	keyItem2, _ := pm.GetHashKeyItem("col_2", pageRecord)
+	expectedHashKey := base64.StdEncoding.EncodeToString([]byte(strings.Join([]string{keyItem1, keyItem2}, hashKeyPairSep)))
 
 	result, err := pm.GetHashKey(partition, pageRecord)
-
 	assert.Nil(t, err)
-	assert.Equal(t, result, fmt.Sprintf("%s%s.json", keyItem1, keyItem2))
+	assert.Equal(t, fmt.Sprintf("%s.json", expectedHashKey), result)
 
 }
 
@@ -657,12 +657,11 @@ func TestUnit_GetHashKey_FailsOnHashKeyItem(t *testing.T) {
 		"col_1": "value_1",
 	}
 	pm := createTestPartitionManager(dataLocation)
-	keyItem1, _ := pm.GetHashKeyItem("col_1", pageRecord)
 
 	result, err := pm.GetHashKey(partition, pageRecord)
 
 	assert.NotNil(t, err)
-	assert.Equal(t, result, keyItem1)
+	assert.Equal(t, "", result)
 }
 
 func TestUnit_GetHashKeyItem_GetsHashKeyItem(t *testing.T) {
@@ -675,11 +674,8 @@ func TestUnit_GetHashKeyItem_GetsHashKeyItem(t *testing.T) {
 	result, err := pm.GetHashKeyItem(key, pageRecord)
 
 	assert.Nil(t, err)
-	hash := sha1.New()
-	hash.Write([]byte(fmt.Sprintf("%+v", pageRecord[key])))
-	hashString := base64.URLEncoding.EncodeToString(hash.Sum(nil))
-	assert.Equal(t, hashString, result)
-	assert.Equal(t, 28, len(result))
+	expectedHashKeyItem := fmt.Sprintf("%s%s%+v", key, hashKeyValueSep, pageRecord[key])
+	assert.Equal(t, expectedHashKeyItem, result)
 }
 
 func TestUnit_GetHashKeyItem_FailsOnMissingKey(t *testing.T) {
@@ -772,4 +768,48 @@ func TestUnit_CreateHashKey_FailsOnHashKeyWrite(t *testing.T) {
 	assert.True(t, writeFileCalled)
 	assert.NotNil(t, err)
 	assert.Equal(t, diskModels.PartitionPages{}, result)
+}
+
+func TestUnit_CompareHashKeyItem_ComparesHashKeyItem(t *testing.T) {
+	pm := createTestPartitionManager("dataLocation")
+	pageRecord := diskModels.PageRecord{
+		"col_one":   1,
+		"col_two":   "another item",
+		"col_three": 5,
+	}
+	compare1, _ := pm.GetHashKeyItem("col_one", pageRecord)
+	compare2, _ := pm.GetHashKeyItem("col_three", pageRecord)
+	hashKeyFile, _ := pm.GetHashKey(diskModels.Partition{Keys: []string{"col_one", "col_three"}}, pageRecord)
+
+	result1 := pm.CompareHashKeyItem(compare1, hashKeyFile)
+	result2 := pm.CompareHashKeyItem(compare2, hashKeyFile)
+
+	assert.True(t, result1)
+	assert.True(t, result2)
+}
+
+func TestUnit_CompareHashKeyItem_ReturnsFalseOnNoMatch(t *testing.T) {
+	pm := createTestPartitionManager("dataLocation")
+	pageRecord := diskModels.PageRecord{
+		"col_one":   1,
+		"col_two":   "another item",
+		"col_three": 5,
+	}
+	compare, _ := pm.GetHashKeyItem("col_one", diskModels.PageRecord{
+		"col_one": 2,
+	})
+	hashKeyFile, _ := pm.GetHashKey(diskModels.Partition{Keys: []string{"col_one"}}, pageRecord)
+
+	result := pm.CompareHashKeyItem(compare, hashKeyFile)
+
+	assert.False(t, result)
+}
+
+func TestUnit_CompareHashKeyItem_ReturnsFalseOnDecodeError(t *testing.T) {
+	pm := createTestPartitionManager("dataLocation")
+	hashKeyFile := "bad_decoded_string.json"
+
+	result := pm.CompareHashKeyItem("bad_decoded_string", hashKeyFile)
+
+	assert.False(t, result)
 }

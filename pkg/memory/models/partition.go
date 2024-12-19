@@ -8,11 +8,11 @@ import (
 
 type PartitionMapI interface {
 	Initialize() error
-	GetByHash(hashKeyFile string) ([]*Page, error)
+	GetByHash(hashKeyFile string) ([]PageI, error)
 	GetAllHashKeys() []string
 	Add(hashKeyFile string, pageFileName string) error
 	Delete(hashKeyFile string, pageFileName string) error
-	GetCurrentPage(hashKeyFile string) (*Page, error)
+	GetCurrentPage(hashKeyFile string) (PageI, error)
 }
 
 type PartitionMap struct {
@@ -64,10 +64,10 @@ func (pm *PartitionMap) Initialize() error {
 	return nil
 }
 
-func (pm *PartitionMap) GetByHash(hashKeyFile string) ([]*Page, error) {
+func (pm *PartitionMap) GetByHash(hashKeyFile string) ([]PageI, error) {
 	pm.m.Lock()
 	defer pm.m.Unlock()
-	pages := []*Page{}
+	pages := []PageI{}
 	if pageFiles, ok := pm.itemMap[hashKeyFile]; ok {
 		for _, pageFile := range pageFiles {
 			if page, err := pm.pageMap.Get(pageFile); err != nil {
@@ -133,7 +133,7 @@ func (pm *PartitionMap) Delete(hashKeyFile string, pageFileName string) error {
 	return nil
 }
 
-func (pm *PartitionMap) GetCurrentPage(hashKeyFile string) (*Page, error) {
+func (pm *PartitionMap) GetCurrentPage(hashKeyFile string) (PageI, error) {
 	pm.m.Lock()
 	defer pm.m.Unlock()
 	if pageFile, ok := pm.currentPages[hashKeyFile]; ok {

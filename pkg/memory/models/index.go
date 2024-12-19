@@ -10,11 +10,11 @@ import (
 
 type IndexMapI interface {
 	Initialize() error
-	Get(prefix string, fileName string) (*Index, error)
-	GetByPrefix(prefix string) ([]*Index, error)
-	Add(pageRecordId string) (*Index, error)
+	Get(prefix string, fileName string) (IndexI, error)
+	GetByPrefix(prefix string) ([]IndexI, error)
+	Add(pageRecordId string) (IndexI, error)
 	Delete(prefix string, fileName string) error
-	GetCurrentIndex(prefix string) (*Index, error)
+	GetCurrentIndex(prefix string) (IndexI, error)
 }
 
 type IndexMap struct {
@@ -28,8 +28,8 @@ type IndexMap struct {
 	dataCaching      bool
 }
 
-type IndexPrefixMap map[string]map[string]*Index
-type IndexPrefixCurrentPageMap map[string]*Index
+type IndexPrefixMap map[string]map[string]IndexI
+type IndexPrefixCurrentPageMap map[string]IndexI
 
 func NewIndexMap(db string, blob string, dataLocation string, dataCaching bool) IndexMapI {
 	return &IndexMap{
@@ -50,7 +50,7 @@ func (im *IndexMap) Initialize() error {
 		return err
 	}
 	for prefix, index := range indexes {
-		im.itemMap[prefix] = make(map[string]*Index)
+		im.itemMap[prefix] = make(map[string]IndexI)
 		for _, fileName := range index.FileNames {
 			indexObj := NewIndex(im.db, im.blob, fileName, im.dataLocation, im.dataCaching)
 			im.itemMap[prefix][fileName] = indexObj
@@ -60,30 +60,32 @@ func (im *IndexMap) Initialize() error {
 	return nil
 }
 
-func (im *IndexMap) Get(prefix string, fileName string) (*Index, error) {
+func (im *IndexMap) Get(prefix string, fileName string) (IndexI, error) {
 	im.m.Lock()
 	defer im.m.Unlock()
 	if indexMap, ok := im.itemMap[prefix]; ok {
-		if index, indexFound := indexMap[fileName]; indexFound {
+		if index, indexFound := indexMap[fileName]; indexFound && index != nil {
 			return index, nil
 		}
 	}
 	return nil, fmt.Errorf("index file %s not found", fileName)
 }
 
-func (im *IndexMap) GetByPrefix(prefix string) ([]*Index, error) {
+func (im *IndexMap) GetByPrefix(prefix string) ([]IndexI, error) {
 	im.m.Lock()
 	defer im.m.Unlock()
-	indexes := []*Index{}
+	indexes := []IndexI{}
 	if indexMap, ok := im.itemMap[prefix]; ok {
 		for _, index := range indexMap {
-			indexes = append(indexes, index)
+			if index != nil {
+				indexes = append(indexes, index)
+			}
 		}
 	}
 	return indexes, nil
 }
 
-func (im *IndexMap) Add(pageRecordId string) (*Index, error) {
+func (im *IndexMap) Add(pageRecordId string) (IndexI, error) {
 	im.m.Lock()
 	defer im.m.Unlock()
 	fileName, err := im.indexDiskManager.Create(im.db, im.blob, pageRecordId)
@@ -95,7 +97,7 @@ func (im *IndexMap) Add(pageRecordId string) (*Index, error) {
 	}
 	prefix := im.indexDiskManager.GetPageRecordIdPrefix(pageRecordId)
 	if _, ok := im.itemMap[prefix]; !ok {
-		im.itemMap[prefix] = make(map[string]*Index)
+		im.itemMap[prefix] = make(map[string]IndexI)
 	}
 	index := NewIndex(im.db, im.blob, fileName, im.dataLocation, im.dataCaching)
 	im.itemMap[prefix][fileName] = index
@@ -113,14 +115,14 @@ func (im *IndexMap) Delete(prefix string, fileName string) error {
 	delete(im.itemMap[prefix], fileName)
 	if len(im.itemMap[prefix]) == 0 {
 		delete(im.itemMap, prefix)
-		if im.currentPages[prefix] != nil && fileName == im.currentPages[prefix].fileName {
+		if im.currentPages[prefix] != nil && fileName == im.currentPages[prefix].GetFileName() {
 			delete(im.currentPages, prefix)
 		}
 	}
 	return err
 }
 
-func (im *IndexMap) GetCurrentIndex(prefix string) (*Index, error) {
+func (im *IndexMap) GetCurrentIndex(prefix string) (IndexI, error) {
 	im.m.Lock()
 	defer im.m.Unlock()
 	if _, ok := im.currentPages[prefix]; ok {
@@ -129,6 +131,13 @@ func (im *IndexMap) GetCurrentIndex(prefix string) (*Index, error) {
 		}
 	}
 	return nil, errors.New("current index not found")
+}
+
+type IndexI interface {
+	Read() (diskModels.IndexRecords, error)
+	Write(data diskModels.IndexRecords) error
+	Delete(pageRecordIds []string) (int, error)
+	GetFileName() string
 }
 
 type Index struct {
@@ -141,7 +150,7 @@ type Index struct {
 	dataCaching      bool
 }
 
-func NewIndex(db string, blob string, fileName string, dataLocation string, dataCaching bool) *Index {
+func NewIndex(db string, blob string, fileName string, dataLocation string, dataCaching bool) IndexI {
 	return &Index{
 		m:                &sync.Mutex{},
 		fileName:         fileName,

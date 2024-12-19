@@ -75,16 +75,17 @@ func (im *MockIndexManager) GetPageRecordIdPrefix(pageRecordId string) string {
 }
 
 type MockPartitionManager struct {
-	InitializeFunc     func(db string, blob string, partition diskModels.Partition) error
-	AddPageFunc        func(db string, blob string, hashKeyFileName string, pageFileName string) error
-	GetPartitionFunc   func(db string, blob string) (diskModels.Partition, error)
-	GetByHashKeyFunc   func(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
-	GetHashKeyItemFunc func(partitionKey string, pageRecord diskModels.PageRecord) (string, error)
-	GetAllFunc         func(db string, blob string) ([]string, error)
-	RemoveFunc         func(db string, blob string, hashKeyFileName string, pageFileName string) error
-	DeleteFunc         func(db string, blob string, hashKeyFileName string) error
-	GetHashKeyFunc     func(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error)
-	CreateHashKeyFunc  func(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
+	InitializeFunc         func(db string, blob string, partition diskModels.Partition) error
+	AddPageFunc            func(db string, blob string, hashKeyFileName string, pageFileName string) error
+	GetPartitionFunc       func(db string, blob string) (diskModels.Partition, error)
+	GetByHashKeyFunc       func(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
+	GetHashKeyItemFunc     func(partitionKey string, pageRecord diskModels.PageRecord) (string, error)
+	GetAllFunc             func(db string, blob string) ([]string, error)
+	RemoveFunc             func(db string, blob string, hashKeyFileName string, pageFileName string) error
+	DeleteFunc             func(db string, blob string, hashKeyFileName string) error
+	GetHashKeyFunc         func(partition diskModels.Partition, pageRecord diskModels.PageRecord) (string, error)
+	CreateHashKeyFunc      func(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error)
+	CompareHashKeyItemFunc func(compare string, hashKeyFile string) bool
 }
 
 var MockPartitionManagerInstance *MockPartitionManager
@@ -132,6 +133,10 @@ func (pm *MockPartitionManager) GetHashKey(partition diskModels.Partition, pageR
 
 func (pm *MockPartitionManager) CreateHashKey(db string, blob string, hashKeyFileName string) (diskModels.PartitionPages, error) {
 	return pm.CreateHashKeyFunc(db, blob, hashKeyFileName)
+}
+
+func (pm *MockPartitionManager) CompareHashKeyItem(compare string, hashKeyFile string) bool {
+	return pm.CompareHashKeyItemFunc(compare, hashKeyFile)
 }
 
 type MockFormatManager struct {
